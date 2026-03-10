@@ -1,5 +1,7 @@
 // shell.ts — kernelsu exec wrapper
 
+import { exec } from 'kernelsu'
+
 interface ExecResult {
   errno: number
   stdout: string
@@ -14,12 +16,11 @@ const HELPER = `${MODULE_DIR}/scripts/helper.sh`
 export const PERSIST_DIR = '/data/adb/rime_helper'
 
 export function shellQuote(input: string): string {
-  return `'${input.replace(/'/g, `'"'"'`)}'`
+  return `'${input.replace(/'/g, `"'"'`)}'`
 }
 
 async function ksuExec(command: string): Promise<ExecResult> {
   try {
-    const { exec } = await import('kernelsu')
     const result = await exec(command)
     return result as ExecResult
   } catch {

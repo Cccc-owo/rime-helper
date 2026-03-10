@@ -1,0 +1,95 @@
+name: Build and Release
+
+on:
+  push:
+    branches:
+      - '**'
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version tag (e.g. v1.0.0)'
+        required: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: webui/package-lock.json
+
+      - name: Determine version
+        id: version
+        run: |
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            VERSION="${GITHUB_REF_NAME}"
+            CODE=$(echo "$VERSION" | sed 's/v//; s/\.//g')
+          elif [ "${{ github.event_name }}" = "push" ]; then
+            VERSION="nightly"
+            CODE="${GITHUB_RUN_NUMBER}"
+          else
+            VERSION="${{ github.event.inputs.version }}"
+            CODE=$(echo "$VERSION" | sed 's/v//; s/\.//g')
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "code=$CODE" >> "$GITHUB_OUTPUT"
+
+      - name: Build module
+        run: |
+          chmod +x build.sh
+          ./build.sh "${{ steps.version.outputs.version }}" "${{ steps.version.outputs.code }}"
+
+      - name: Generate update.json
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          CODE="${{ steps.version.outputs.code }}"
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            ZIP_URL="https://github.com/${{ github.repository }}/releases/download/$VERSION/rime_helper-$VERSION.zip"
+            CHANGELOG_URL="https://github.com/${{ github.repository }}/releases/tag/$VERSION"
+          else
+            ZIP_URL="https://github.com/${{ github.repository }}/releases/download/nightly/rime_helper-nightly.zip"
+            CHANGELOG_URL="https://github.com/${{ github.repository }}/commit/${{ github.sha }}"
+          fi
+          cat > out/update.json << EOF
+          {
+            "version": "$VERSION",
+            "versionCode": $CODE,
+            "zipUrl": "$ZIP_URL",
+            "changelog": "$CHANGELOG_URL"
+          }
+          EOF
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: rime_helper-${{ steps.version.outputs.version }}
+          path: out/
+
+      - name: Create/Update Nightly Release
+        if: github.event_name == 'push' && github.ref_type == 'branch'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: nightly
+          name: Nightly Build
+          prerelease: true
+          make_latest: false
+          files: |
+            out/rime_helper-*.zip
+            out/update.json
+
+      - name: Create Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            out/rime_helper-*.zip
+            out/update.json
+          generate_release_notes: true

@@ -1,0 +1,8 @@
+node_modules/
+dist/
+module/webroot/*
+!module/webroot/.gitkeep
+*.zip
+.DS_Store
+*.log
+out

@@ -1,0 +1,7 @@
+id=rime_helper
+name=Rime Update Helper
+version=v1.0.0
+versionCode=1
+author=Cccc_
+description=Update and sync Rime resources on Android.
+updateJson=https://github.com/Cccc-owo/rime-helper/releases/latest/download/update.json

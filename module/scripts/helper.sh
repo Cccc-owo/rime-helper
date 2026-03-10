@@ -15,15 +15,10 @@ LOG_FILE="$LOG_DIR/rime_helper.log"
 CONFIG_FILE="$PERSIST_DIR/config.prop"
 DOWNLOAD_DIR="$PERSIST_DIR/downloads"
 RESOURCES_CONF="$PERSIST_DIR/resources.conf"
+DEFAULT_RESOURCES_CONF="$MODDIR/default-resources.conf"
+TARGET_APPS_CONF="$MODDIR/target-apps.conf"
+PRESERVE_PATTERNS_CONF="$MODDIR/preserve-patterns.conf"
 MAX_LOG_SIZE=102400
-
-# Target apps: package|rime_data_path|label
-TARGET_APPS="org.fcitx.fcitx5.android|/sdcard/Android/data/org.fcitx.fcitx5.android/files/data/rime|fcitx5-android
-com.osfans.trime|/sdcard/rime|Trime"
-
-PRESERVE_PATTERNS="user.yaml
-installation.yaml
-*.userdb"
 
 # ── Helpers ──────────────────────────────────────────────────
 
@@ -50,6 +45,11 @@ log() {
 
 log_info() { log "INFO" "$@"; }
 log_error() { log "ERROR" "$@"; }
+
+is_resource_enabled() {
+    local rid="$1"
+    [ "$(do_config_get "resource_${rid}_enabled" "false")" = "true" ]
+}
 
 get_app_uid() {
     stat -c %u "/data/data/$1" 2>/dev/null || echo "0"
@@ -121,13 +121,8 @@ do_version_set() {
 do_detect() {
     # Output: one line per installed app
     # Format: pkg|label|rime_path|uid|dir_exists
-    local IFS_OLD="$IFS"
-    IFS='
-'
-    for line in $TARGET_APPS; do
-        IFS='|' read -r pkg path label <<EOF
-$line
-EOF
+    while IFS='|' read -r pkg path label; do
+        [ -n "$pkg" ] || continue
         if [ -d "/data/data/$pkg" ]; then
             local uid dir_exists
             uid=$(get_app_uid "$pkg")
@@ -135,8 +130,7 @@ EOF
             [ -d "$path" ] && dir_exists="true"
             echo "${pkg}|${label}|${path}|${uid}|${dir_exists}"
         fi
-    done
-    IFS="$IFS_OLD"
+    done < "$TARGET_APPS_CONF"
 }
 
 # ── download ─────────────────────────────────────────────────
@@ -190,18 +184,6 @@ do_unzip() {
 
 # ── resources.conf ──────────────────────────────────────────
 
-write_default_resources_conf() {
-    cat <<'RESEOF'
-rime-ice|雾凇拼音|iDvel/rime-ice|asset:full\.zip|0|schema
-rime-frost|白霜拼音|gaboolic/rime-frost|asset:rime-frost-schemas\.zip|1|schema
-oh-my-rime|oh-my-rime|Mintimate/oh-my-rime|archive|2|schema
-moegirl|萌娘百科词库|outloudvi/mw2fcitx|asset-files:moegirl\.dict\.yaml$|3|dict
-wanxiang|万象拼音|amzxyz/rime_wanxiang|asset:rime-wanxiang-base\.zip|5|schema
-zhwiki|维基百科词库|felixonmars/fcitx5-pinyin-zhwiki|asset-files:^zhwiki-.*\.dict\.yaml$|10|dict
-wanxiang-gram|万象语法模型|amzxyz/RIME-LMDG|asset-files:[Ll][Tt][Ss].*\.gram$@LTS|20|model
-RESEOF
-}
-
 do_list_resources() {
     [ -f "$RESOURCES_CONF" ] || return 0
     grep -v '^#' "$RESOURCES_CONF" | grep -v '^$'
@@ -232,15 +214,8 @@ do_remove_resource() {
 
 do_reset_resources() {
     do_ensure_dirs
-    local tmp="${RESOURCES_CONF}.tmp.$$"
-    if ! write_default_resources_conf > "$tmp"; then
-        rm -f "$tmp"
-        log_error "Reset resources failed: cannot write temp file"
-        return 1
-    fi
-    if ! mv "$tmp" "$RESOURCES_CONF"; then
-        rm -f "$tmp"
-        log_error "Reset resources failed: cannot replace resources.conf"
+    if ! cp -f "$DEFAULT_RESOURCES_CONF" "$RESOURCES_CONF"; then
+        log_error "Reset resources failed: cannot copy default resources.conf"
         return 1
     fi
     log_info "Resources reset to defaults"
@@ -257,9 +232,10 @@ do_deploy() {
     rm -rf "$backup"
     mkdir -p "$backup"
     if [ -d "$dest" ]; then
-        echo "$PRESERVE_PATTERNS" | while read -r pattern; do
+        while IFS= read -r pattern; do
+            [ -n "$pattern" ] || continue
             find "$dest" -maxdepth 1 -name "$pattern" -exec cp -af {} "$backup/" \; 2>/dev/null
-        done
+        done < "$PRESERVE_PATTERNS_CONF"
         find "$dest" -maxdepth 1 -name "*.userdb" -type d -exec cp -af {} "$backup/" \; 2>/dev/null
     fi
 
@@ -302,14 +278,10 @@ do_deploy_all() {
     rm -rf "$STAGING_DIR"
     mkdir -p "$STAGING_DIR"
     do_list_resources | sort -t'|' -k5 -n | while IFS='|' read -r rid rname rrepo rstrategy rorder rcategory; do
-        local default="false"
-        [ "$rid" = "rime-ice" ] && default="true"
-        local enabled
-        enabled=$(do_config_get "resource_${rid}_enabled" "$default")
-        if [ "$enabled" = "true" ] && [ -d "$RESOURCE_DIR/$rid" ]; then
+        if is_resource_enabled "$rid" && [ -d "$RESOURCE_DIR/$rid" ]; then
             log_info "Staging $rid"
             cp -af "$RESOURCE_DIR/$rid/"* "$STAGING_DIR/" 2>/dev/null
-        elif [ "$enabled" = "true" ]; then
+        elif is_resource_enabled "$rid"; then
             log_info "Skip staging $rid: resource not downloaded"
         fi
     done

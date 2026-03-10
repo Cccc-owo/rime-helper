@@ -21,9 +21,8 @@ export function useConfig() {
       // Build resources array from definitions + config
       const resources: Resource[] = await Promise.all(
         resourceDefs.map(async def => {
-          const defaultEnabled = def.id === 'rime-ice' ? 'true' : 'false'
           const [enabled, version] = await Promise.all([
-            configGet(`resource_${def.id}_enabled`, defaultEnabled),
+            configGet(`resource_${def.id}_enabled`, 'false'),
             getVersion(def.id),
           ])
           return { ...def, enabled: enabled === 'true', version }

@@ -3,11 +3,17 @@ import type { ResourceDef, ResourceId, UpdateCheckResult } from '@/types'
 import { fetchRelease, findAllAssetUrls, getArchiveUrl, fetchLatestCommitSha } from './github'
 import { configGet, getVersion, setVersion, downloadFile, unzipFile, ensureDirs, listResources } from './commands'
 import { PERSIST_DIR } from './shell'
+import { parseStrategy } from '@/resourceStrategy'
 
 const RESOURCE_DIR = `${PERSIST_DIR}/resources`
 const DOWNLOAD_DIR = `${PERSIST_DIR}/downloads`
 
 export let RESOURCES: ResourceDef[] = []
+
+async function isResourceEnabled(def: ResourceDef): Promise<boolean> {
+  const enabled = await configGet(`resource_${def.id}_enabled`, 'false')
+  return enabled === 'true'
+}
 
 export async function loadResources(): Promise<ResourceDef[]> {
   RESOURCES = await listResources()
@@ -19,71 +25,8 @@ export function getResourceDef(rid: ResourceId): ResourceDef | undefined {
 }
 
 export async function getEnabledResourceIds(): Promise<ResourceId[]> {
-  const results: ResourceId[] = []
-  for (const def of RESOURCES) {
-    const defaultVal = def.id === 'rime-ice' ? 'true' : 'false'
-    const enabled = await configGet(`resource_${def.id}_enabled`, defaultVal)
-    if (enabled === 'true') results.push(def.id)
-  }
-  return results
-}
-
-// ── Strategy parsing ────────────────────────────────────────
-
-interface ParsedStrategy {
-  type: 'zipball' | 'asset' | 'asset-files' | 'archive'
-  pattern?: string
-  tag?: string
-}
-
-function parseStrategy(raw: string): ParsedStrategy {
-  if (!raw || raw === 'zipball') return { type: 'zipball' }
-
-  const colonIdx = raw.indexOf(':')
-  let type: string
-  let rest: string
-
-  if (colonIdx >= 0) {
-    type = raw.substring(0, colonIdx)
-    rest = raw.substring(colonIdx + 1)
-  } else {
-    type = raw
-    rest = ''
-  }
-
-  let pattern: string | undefined
-  let tag: string | undefined
-
-  if (rest) {
-    const atIdx = rest.lastIndexOf('@')
-    if (atIdx >= 0) {
-      pattern = rest.substring(0, atIdx)
-      tag = rest.substring(atIdx + 1)
-    } else {
-      pattern = rest
-    }
-  } else {
-    const atIdx = type.lastIndexOf('@')
-    if (atIdx >= 0) {
-      tag = type.substring(atIdx + 1)
-      type = type.substring(0, atIdx)
-    }
-  }
-
-  const validTypes = ['zipball', 'asset', 'asset-files', 'archive']
-  if (!validTypes.includes(type)) {
-    throw new Error(`Unsupported strategy type: ${type}`)
-  }
-
-  if ((type === 'asset' || type === 'asset-files') && !pattern) {
-    throw new Error(`Strategy ${type} requires a pattern`)
-  }
-
-  return {
-    type: type as ParsedStrategy['type'],
-    pattern: pattern || undefined,
-    tag: tag || undefined,
-  }
+  const enabled = await Promise.all(RESOURCES.map(async def => ({ id: def.id, enabled: await isResourceEnabled(def) })))
+  return enabled.filter(item => item.enabled).map(item => item.id)
 }
 
 // ── Update checking ─────────────────────────────────────────
@@ -92,8 +35,9 @@ export async function checkResourceUpdate(rid: ResourceId): Promise<UpdateCheckR
   const def = getResourceDef(rid)
   if (!def) return { id: rid, current: '', latest: '', has_update: false, error: 'Unknown resource' }
 
+  const current = await getVersion(rid).catch(() => '')
+
   try {
-    const current = await getVersion(rid)
     const s = parseStrategy(def.strategy)
     let latest: string
 

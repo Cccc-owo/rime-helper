@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import { addResource } from '@/api/commands'
+import { buildStrategy, parseStrategy } from '@/resourceStrategy'
 import type { ResourceDef } from '@/types'
 
 const props = withDefaults(defineProps<{
@@ -35,28 +36,6 @@ function parseRepo(input: string): string {
   return match ? match[1] : input.trim()
 }
 
-function parseStrategy(strategy: string) {
-  const [strategyPart, tag = ''] = strategy.split('@', 2)
-  const colonIndex = strategyPart.indexOf(':')
-  if (colonIndex === -1) {
-    return { type: strategyPart || 'zipball', pattern: '', tag }
-  }
-  return {
-    type: strategyPart.slice(0, colonIndex) || 'zipball',
-    pattern: strategyPart.slice(colonIndex + 1),
-    tag,
-  }
-}
-
-function buildStrategy(): string {
-  let s = strategyTypeInput.value
-  const pattern = strategyPatternInput.value.trim()
-  const tag = strategyTagInput.value.trim()
-  if (pattern) s += `:${pattern}`
-  if (tag) s += `@${tag}`
-  return s
-}
-
 function resetForm() {
   repoInput.value = ''
   nameInput.value = ''
@@ -77,8 +56,8 @@ function applyInitialResource() {
   repoInput.value = resource.repo
   nameInput.value = resource.name
   strategyTypeInput.value = parsed.type
-  strategyPatternInput.value = parsed.pattern
-  strategyTagInput.value = parsed.tag
+  strategyPatternInput.value = parsed.pattern ?? ''
+  strategyTagInput.value = parsed.tag ?? ''
   categoryInput.value = resource.category ?? 'schema'
   error.value = ''
 }
@@ -115,7 +94,7 @@ async function submit() {
       id,
       name,
       repo,
-      strategy: buildStrategy(),
+      strategy: buildStrategy(strategyTypeInput.value, strategyPatternInput.value, strategyTagInput.value),
       order: props.initialResource?.order ?? 50,
       category: categoryInput.value,
     }

@@ -47,6 +47,8 @@ done
 
 # Create persistent data directory
 PERSIST_DIR="/data/adb/rime_helper"
+DEFAULT_RESOURCES_CONF="$MODPATH/default-resources.conf"
+TARGET_APPS_CONF="$MODPATH/target-apps.conf"
 ui_print "- 创建持久化存储..."
 mkdir -p "$PERSIST_DIR/resources"
 mkdir -p "$PERSIST_DIR/versions"
@@ -58,26 +60,20 @@ mkdir -p "$PERSIST_DIR/downloads"
 RESOURCES_CONF="$PERSIST_DIR/resources.conf"
 if [ ! -f "$RESOURCES_CONF" ]; then
     ui_print "- 初始化资源列表..."
-    cat > "$RESOURCES_CONF" << 'RESEOF'
-rime-ice|雾凇拼音|iDvel/rime-ice|asset:full\.zip|0|schema
-rime-frost|白霜拼音|gaboolic/rime-frost|asset:rime-frost-schemas\.zip|1|schema
-oh-my-rime|oh-my-rime|Mintimate/oh-my-rime|archive|2|schema
-moegirl|萌娘百科词库|outloudvi/mw2fcitx|asset-files:moegirl\.dict\.yaml$|3|dict
-wanxiang|万象拼音|amzxyz/rime_wanxiang|asset:rime-wanxiang-base\.zip|5|schema
-zhwiki|维基百科词库|felixonmars/fcitx5-pinyin-zhwiki|asset-files:^zhwiki-.*\.dict\.yaml$|10|dict
-wanxiang-gram|万象语法模型|amzxyz/RIME-LMDG|asset-files:[Ll][Tt][Ss].*\.gram$@LTS|20|model
-RESEOF
+    cp "$DEFAULT_RESOURCES_CONF" "$RESOURCES_CONF" || abort "初始化默认资源列表失败"
 fi
 
 # Detect installed Rime apps
 ui_print "- 检测已安装的 Rime 应用..."
-if [ -d "/sdcard/Android/data/org.fcitx.fcitx5.android" ]; then
-    ui_print "  - fcitx5-android ✓"
-fi
-if [ -d "/data/data/com.osfans.trime" ]; then
-    ui_print "  - Trime ✓"
-fi
-if [ ! -d "/sdcard/Android/data/org.fcitx.fcitx5.android" ] && [ ! -d "/data/data/com.osfans.trime" ]; then
+DETECTED_APP_COUNT=0
+while IFS='|' read -r pkg path label; do
+    [ -n "$pkg" ] || continue
+    if [ -d "/data/data/$pkg" ]; then
+        ui_print "  - $label ✓"
+        DETECTED_APP_COUNT=$((DETECTED_APP_COUNT + 1))
+    fi
+done < "$TARGET_APPS_CONF"
+if [ "$DETECTED_APP_COUNT" -eq 0 ]; then
     ui_print "  ! 未检测到 Rime 输入法应用"
     ui_print "  ! 请安装 fcitx5-android 或 Trime 后重新配置"
 fi
@@ -85,15 +81,12 @@ fi
 # Set default config if first install
 if [ ! -f "$PERSIST_DIR/config.prop" ] && [ -z "$KSU" ]; then
     ui_print "- 初始化默认配置..."
-    echo "resource_rime-ice_enabled=true" > "$PERSIST_DIR/config.prop"
+    : > "$PERSIST_DIR/config.prop"
 fi
 
 # For KSU, initialize default config via ksud
 if [ -n "$KSU" ]; then
     ui_print "- KernelSU 模式：初始化配置..."
-    # Only set defaults if not already configured
-    ksud module config get rime_helper resource_rime-ice_enabled >/dev/null 2>&1 || \
-        ksud module config set rime_helper resource_rime-ice_enabled true 2>/dev/null
 fi
 
 # Set module permissions

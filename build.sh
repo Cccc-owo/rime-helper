@@ -24,10 +24,8 @@ fi
 npm run build
 cd ..
 
-# Remove gitkeep from webroot if real files exist
-if [ "$(ls -A module/webroot/ 2>/dev/null | grep -v .gitkeep)" ]; then
-    rm -f module/webroot/.gitkeep
-fi
+# Remove gitkeep from webroot after build
+mkdir -p module/webroot
 
 # Package ZIP
 echo "--- Packaging module ---"

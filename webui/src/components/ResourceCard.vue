@@ -1,7 +1,8 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import type { Resource } from '@/types'
 
-defineProps<{
+const props = defineProps<{
   resource: Resource
   progress?: string
   removable?: boolean
@@ -14,6 +15,12 @@ const emit = defineEmits<{
   edit: []
   remove: []
 }>()
+
+const actionLabel = computed(() => {
+  if (props.downloading) return '下载中...'
+  if (!props.resource.installed) return '下载'
+  return '重新下载'
+})
 </script>
 
 <template>
@@ -55,19 +62,24 @@ const emit = defineEmits<{
       </div>
     </div>
     <div class="resource-footer">
-      <span class="resource-version" v-if="resource.version">
-        {{ resource.version }}
-      </span>
-      <span class="resource-version" v-else>未安装</span>
-      <span class="resource-progress" v-if="progress">{{ progress }}</span>
-      <button
-        v-else-if="resource.enabled"
-        class="btn btn-outline btn-mini"
-        :disabled="downloading"
-        @click="emit('download')"
-      >
-        {{ downloading ? '下载中...' : '下载' }}
-      </button>
+      <div class="resource-meta">
+        <span class="resource-version" v-if="resource.version">
+          {{ resource.version }}
+        </span>
+        <span class="resource-version" v-else>未安装</span>
+        <span class="resource-installed" v-if="resource.installed">已下载</span>
+      </div>
+      <div class="resource-tail">
+        <span class="resource-progress" v-if="progress">{{ progress }}</span>
+        <button
+          v-if="resource.enabled"
+          class="btn btn-outline btn-mini"
+          :disabled="downloading"
+          @click="emit('download')"
+        >
+          {{ actionLabel }}
+        </button>
+      </div>
     </div>
   </div>
 </template>
@@ -143,9 +155,22 @@ const emit = defineEmits<{
   gap: 10px;
 }
 
+.resource-meta,
+.resource-tail {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .resource-version {
   font-size: 13px;
   color: var(--text-secondary);
+}
+
+.resource-installed {
+  font-size: 12px;
+  color: var(--success);
 }
 
 .resource-progress {

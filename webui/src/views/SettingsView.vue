@@ -2,15 +2,16 @@
 import { onMounted, ref, computed } from 'vue'
 import { useConfig } from '@/composables/useConfig'
 import { useApps } from '@/composables/useApps'
+import { useAppState } from '@/composables/useAppState'
 import { clearDownloadCache } from '@/api/commands'
 
 const {
-  config,
   loading,
   load,
   setTargetApps,
 } = useConfig()
 const { apps, load: loadApps } = useApps()
+const appState = useAppState()
 const clearingCache = ref(false)
 const cacheMessage = ref('')
 const cacheError = ref('')
@@ -21,9 +22,12 @@ onMounted(() => {
 })
 
 const targetAppList = computed(() => {
-  const str = config.value?.target_apps ?? ''
-  return str ? str.split(',') : []
+  const str = appState.targetApps.value
+  return str ? str.split(',').filter(Boolean) : []
 })
+
+const targetScopeText = computed(() => targetAppList.value.length === 0 ? '全部已检测应用' : `已指定 ${targetAppList.value.length} 个应用`)
+const installedResourceCount = computed(() => appState.installedResourceCount.value)
 
 async function toggleTargetApp(pkg: string, checked: boolean) {
   const current = new Set(targetAppList.value)
@@ -45,6 +49,7 @@ async function clearCache() {
   clearingCache.value = true
   try {
     await clearDownloadCache()
+    await appState.refresh(true)
     cacheMessage.value = '已清除下载缓存'
   } catch (e) {
     cacheError.value = e instanceof Error ? e.message : String(e)
@@ -61,6 +66,17 @@ async function clearCache() {
 
     <div v-if="loading" class="state-text">加载中...</div>
     <template v-else>
+      <div class="card summary-card">
+        <div class="summary-item">
+          <div class="meta-text">当前同步范围</div>
+          <div class="summary-value small">{{ targetScopeText }}</div>
+        </div>
+        <div class="summary-item">
+          <div class="meta-text">已下载资源</div>
+          <div class="summary-value">{{ installedResourceCount }}</div>
+        </div>
+      </div>
+
       <div class="card">
         <div class="card-title">目标应用</div>
         <div class="setting-desc target-desc">
@@ -97,6 +113,30 @@ async function clearCache() {
 </template>
 
 <style scoped>
+.summary-card {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.summary-item {
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--radius-small);
+  background: var(--surface-muted);
+  padding: 10px;
+}
+
+.summary-value {
+  margin-top: 4px;
+  font-size: 18px;
+  font-weight: 650;
+}
+
+.summary-value.small {
+  font-size: 13px;
+  line-height: 1.4;
+}
+
 .setting-desc {
   font-size: 13px;
   color: var(--text-secondary);

@@ -5,6 +5,7 @@ import { useApps } from '@/composables/useApps'
 import { useConfig } from '@/composables/useConfig'
 import { useUpdate } from '@/composables/useUpdate'
 import { useResources } from '@/composables/useResources'
+import { useAppState } from '@/composables/useAppState'
 import { useDeployAction } from '@/composables/useDeployAction'
 import AppCard from '@/components/AppCard.vue'
 import UpdateCard from '@/components/UpdateCard.vue'
@@ -24,11 +25,12 @@ const {
   status,
   loadStatus,
 } = useUpdate()
+const appState = useAppState()
 
 const deployAction = useDeployAction()
 const opMessage = computed(() => deployAction.message.value)
 const opError = computed(() => deployAction.error.value)
-const deploying = computed(() => deployAction.deploying.value)
+const deploying = computed(() => appState.deploy.value.state === 'running')
 
 const logs = ref('')
 const logLoading = ref(false)
@@ -36,7 +38,14 @@ const logExpanded = ref(false)
 const lastRefreshedAt = ref('')
 let refreshTimer: ReturnType<typeof setInterval> | null = null
 
-const enabledResourceCount = computed(() => config.value?.resources?.filter(r => r.enabled).length ?? 0)
+const enabledResourceCount = computed(() => appState.enabledResourceCount.value)
+const targetAppsText = computed(() => {
+  const value = config.value?.target_apps ?? ''
+  return value ? '已指定' : '全部应用'
+})
+const deployDetail = computed(() => appState.deploy.value.detail)
+const deployError = computed(() => appState.deploy.value.error)
+const deployState = computed(() => appState.deploy.value.state)
 
 const multiSchemaWarning = computed(() => {
   const enabledSchemas = (config.value?.resources ?? [])
@@ -128,7 +137,7 @@ async function handleDeploy() {
     {
       preHint: '如启用了多个完整方案，建议先保留一个再同步文件。',
       basePendingMessage: '正在将文件同步到已选择的输入法数据目录，请稍候...',
-      successMessage: '文件已同步到输入法数据目录。实际生效取决于输入法内的 Rime 引擎，请在输入法内执行重新部署并查看日志。',
+      successMessage: '同步任务已提交，可结合下方“后端状态”和日志确认最终结果。',
     },
   )
 }
@@ -186,12 +195,20 @@ async function toggleLogExpanded() {
           <div class="status-value">{{ enabledResourceCount }}</div>
         </div>
         <div class="status-item">
-          <div class="meta-text">上次更新</div>
-          <div class="status-value small">{{ status ? formatTime(status.last_update) : '-' }}</div>
+          <div class="meta-text">上次下载完成</div>
+          <div class="status-value small">{{ formatTime(status.last_download_completed_at) }}</div>
+        </div>
+        <div class="status-item">
+          <div class="meta-text">上次同步完成</div>
+          <div class="status-value small">{{ formatTime(status.last_deploy_completed_at) }}</div>
         </div>
         <div class="status-item">
           <div class="meta-text">同步目标</div>
-          <div class="status-value">{{ (config?.target_apps ?? '') ? '已指定' : '全部应用' }}</div>
+          <div class="status-value">{{ targetAppsText }}</div>
+        </div>
+        <div class="status-item">
+          <div class="meta-text">后端同步状态</div>
+          <div class="status-value">{{ deployState === 'running' ? '同步中' : deployState === 'error' ? '失败' : deployState === 'success' ? '成功' : '空闲' }}</div>
         </div>
       </div>
 
@@ -234,6 +251,11 @@ async function toggleLogExpanded() {
     <section class="section">
       <div class="section-head">
         <h2 class="card-title">文件同步</h2>
+      </div>
+      <div class="card deploy-state-card" v-if="deployDetail || deployError || deployState !== 'idle'">
+        <div class="meta-text">后端任务状态</div>
+        <div class="deploy-detail" v-if="deployDetail">{{ deployDetail }}</div>
+        <div class="deploy-error" v-if="deployError">{{ deployError }}</div>
       </div>
       <div class="card">
         <button class="btn btn-primary btn-block" :disabled="deploying || updating || checking" @click="handleDeploy">
@@ -309,6 +331,19 @@ async function toggleLogExpanded() {
   background: var(--warning-soft);
   border: 1px solid var(--warning);
   margin-bottom: 12px;
+}
+
+.deploy-state-card {
+  font-size: 13px;
+}
+
+.deploy-detail {
+  margin-top: 6px;
+}
+
+.deploy-error {
+  margin-top: 6px;
+  color: var(--error);
 }
 
 .log-panel {

@@ -22,6 +22,7 @@ export interface ResourceDef {
 export interface Resource extends ResourceDef {
   enabled: boolean
   version: string
+  installed: boolean
 }
 
 export interface UpdateCheckResult {
@@ -49,7 +50,8 @@ export interface AppConfig {
 }
 
 export interface UpdateStatus {
-  last_update: string
+  last_download_completed_at: string
+  last_deploy_completed_at: string
 }
 
 export type ResourceProgressState = 'idle' | 'checking' | 'downloading' | 'extracting' | 'done' | 'error'
@@ -73,6 +75,26 @@ export interface DownloadTaskStatus {
   failedIds: ResourceId[]
   error: string
   updatedAt: string
+}
+
+export interface DeployTaskStatus {
+  state: DownloadTaskState
+  detail: string
+  error: string
+  updatedAt: string
+  lastSuccessAt: string
+}
+
+export interface AppStateSnapshot {
+  targetApps: string
+  targetCount: number
+  resources: Resource[]
+  download: DownloadTaskStatus
+  deploy: DeployTaskStatus
+  summary: {
+    enabledResourceCount: number
+    installedResourceCount: number
+  }
 }
 
 export type ViewName = 'resources' | 'deploy' | 'settings'

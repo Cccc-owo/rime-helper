@@ -17,6 +17,8 @@ DOWNLOAD_DIR="$PERSIST_DIR/downloads"
 TASK_DIR="$PERSIST_DIR/tasks"
 DOWNLOAD_TASK_STATUS_FILE="$TASK_DIR/download.status"
 DOWNLOAD_TASK_PID_FILE="$TASK_DIR/download.pid"
+DEPLOY_TASK_STATUS_FILE="$TASK_DIR/deploy.status"
+DEPLOY_TASK_PID_FILE="$TASK_DIR/deploy.pid"
 RESOURCES_CONF="$PERSIST_DIR/resources.conf"
 DEFAULT_RESOURCES_CONF="$MODDIR/default-resources.conf"
 TARGET_APPS_CONF="$MODDIR/target-apps.conf"
@@ -216,6 +218,160 @@ download_task_finish_error() {
     DOWNLOAD_TASK_ERROR="$2"
     [ -n "$1" ] && DOWNLOAD_TASK_CURRENT_ID="$1"
     download_task_write_status
+}
+
+deploy_task_default_state() {
+    DEPLOY_TASK_STATE="idle"
+    DEPLOY_TASK_DETAIL=""
+    DEPLOY_TASK_ERROR=""
+    DEPLOY_TASK_UPDATED_AT=$(download_task_now)
+    DEPLOY_TASK_LAST_SUCCESS_AT="0"
+}
+
+deploy_task_write_status() {
+    mkdir -p "$TASK_DIR"
+    DEPLOY_TASK_UPDATED_AT=$(download_task_now)
+    cat > "$DEPLOY_TASK_STATUS_FILE" <<EOF
+state=$(download_task_quote "$DEPLOY_TASK_STATE")
+detail=$(download_task_quote "$DEPLOY_TASK_DETAIL")
+error=$(download_task_quote "$DEPLOY_TASK_ERROR")
+updated_at=$(download_task_quote "$DEPLOY_TASK_UPDATED_AT")
+last_success_at=$(download_task_quote "$DEPLOY_TASK_LAST_SUCCESS_AT")
+EOF
+}
+
+deploy_task_load_status() {
+    deploy_task_default_state
+    [ -f "$DEPLOY_TASK_STATUS_FILE" ] && . "$DEPLOY_TASK_STATUS_FILE"
+    DEPLOY_TASK_STATE="${state:-$DEPLOY_TASK_STATE}"
+    DEPLOY_TASK_DETAIL="${detail:-$DEPLOY_TASK_DETAIL}"
+    DEPLOY_TASK_ERROR="${error:-$DEPLOY_TASK_ERROR}"
+    DEPLOY_TASK_UPDATED_AT="${updated_at:-$DEPLOY_TASK_UPDATED_AT}"
+    DEPLOY_TASK_LAST_SUCCESS_AT="${last_success_at:-$DEPLOY_TASK_LAST_SUCCESS_AT}"
+}
+
+deploy_task_status_output() {
+    if [ -f "$DEPLOY_TASK_STATUS_FILE" ]; then
+        deploy_task_load_status
+    else
+        deploy_task_default_state
+    fi
+    cat <<EOF
+state=$(download_task_sanitize "$DEPLOY_TASK_STATE")
+detail=$(download_task_sanitize "$DEPLOY_TASK_DETAIL")
+error=$(download_task_sanitize "$DEPLOY_TASK_ERROR")
+updated_at=$(download_task_sanitize "$DEPLOY_TASK_UPDATED_AT")
+last_success_at=$(download_task_sanitize "$DEPLOY_TASK_LAST_SUCCESS_AT")
+EOF
+}
+
+deploy_task_is_running() {
+    local pid
+    [ -f "$DEPLOY_TASK_PID_FILE" ] || return 1
+    pid=$(cat "$DEPLOY_TASK_PID_FILE" 2>/dev/null)
+    [ -n "$pid" ] || return 1
+    kill -0 "$pid" 2>/dev/null
+}
+
+deploy_task_clear_pid() {
+    rm -f "$DEPLOY_TASK_PID_FILE"
+}
+
+deploy_task_mark_running() {
+    deploy_task_load_status
+    DEPLOY_TASK_STATE="running"
+    DEPLOY_TASK_DETAIL="$1"
+    DEPLOY_TASK_ERROR=""
+    deploy_task_write_status
+}
+
+deploy_task_finish_success() {
+    DEPLOY_TASK_STATE="success"
+    DEPLOY_TASK_DETAIL="$1"
+    DEPLOY_TASK_ERROR=""
+    DEPLOY_TASK_LAST_SUCCESS_AT=$(download_task_now)
+    deploy_task_write_status
+}
+
+deploy_task_finish_error() {
+    deploy_task_load_status
+    DEPLOY_TASK_STATE="error"
+    DEPLOY_TASK_DETAIL="$1"
+    DEPLOY_TASK_ERROR="$1"
+    deploy_task_write_status
+}
+
+resource_is_downloaded() {
+    local rid="$1"
+    [ -d "$RESOURCE_DIR/$rid" ] && [ "$(ls -A "$RESOURCE_DIR/$rid" 2>/dev/null)" ]
+}
+
+do_status() {
+    local target_apps raw_target_apps target_count enabled_count installed_count rid name repo strategy order category enabled version installed
+
+    do_ensure_dirs
+    download_task_load_status
+    deploy_task_load_status
+
+    raw_target_apps=$(do_config_get "target_apps" "")
+    target_count=0
+    if [ -n "$raw_target_apps" ]; then
+        target_count=$(printf '%s' "$raw_target_apps" | tr ',' '\n' | grep -c .)
+    fi
+
+    enabled_count=0
+    installed_count=0
+
+    cat <<EOF
+config.target_apps=$(download_task_sanitize "$raw_target_apps")
+config.target_count=$(download_task_sanitize "$target_count")
+download.state=$(download_task_sanitize "$DOWNLOAD_TASK_STATE")
+download.mode=$(download_task_sanitize "$DOWNLOAD_TASK_MODE")
+download.current_id=$(download_task_sanitize "$DOWNLOAD_TASK_CURRENT_ID")
+download.current_state=$(download_task_sanitize "$DOWNLOAD_TASK_CURRENT_STATE")
+download.current_detail=$(download_task_sanitize "$DOWNLOAD_TASK_CURRENT_DETAIL")
+download.completed_ids=$(download_task_sanitize "$DOWNLOAD_TASK_COMPLETED_IDS")
+download.failed_ids=$(download_task_sanitize "$DOWNLOAD_TASK_FAILED_IDS")
+download.error=$(download_task_sanitize "$DOWNLOAD_TASK_ERROR")
+download.updated_at=$(download_task_sanitize "$DOWNLOAD_TASK_UPDATED_AT")
+deploy.state=$(download_task_sanitize "$DEPLOY_TASK_STATE")
+deploy.detail=$(download_task_sanitize "$DEPLOY_TASK_DETAIL")
+deploy.error=$(download_task_sanitize "$DEPLOY_TASK_ERROR")
+deploy.updated_at=$(download_task_sanitize "$DEPLOY_TASK_UPDATED_AT")
+deploy.last_success_at=$(download_task_sanitize "$DEPLOY_TASK_LAST_SUCCESS_AT")
+EOF
+
+    while IFS='|' read -r rid name repo strategy order category; do
+        [ -n "$rid" ] || continue
+        enabled="false"
+        version=$(do_version_get "$rid")
+        installed="false"
+
+        if is_resource_enabled "$rid"; then
+            enabled="true"
+            enabled_count=$((enabled_count + 1))
+        fi
+
+        if resource_is_downloaded "$rid"; then
+            installed="true"
+            installed_count=$((installed_count + 1))
+        fi
+
+        printf 'resource.%s.id=%s\n' "$rid" "$(download_task_sanitize "$rid")"
+        printf 'resource.%s.name=%s\n' "$rid" "$(download_task_sanitize "$name")"
+        printf 'resource.%s.repo=%s\n' "$rid" "$(download_task_sanitize "$repo")"
+        printf 'resource.%s.strategy=%s\n' "$rid" "$(download_task_sanitize "$strategy")"
+        printf 'resource.%s.order=%s\n' "$rid" "$(download_task_sanitize "$order")"
+        printf 'resource.%s.category=%s\n' "$rid" "$(download_task_sanitize "$category")"
+        printf 'resource.%s.enabled=%s\n' "$rid" "$(download_task_sanitize "$enabled")"
+        printf 'resource.%s.version=%s\n' "$rid" "$(download_task_sanitize "$version")"
+        printf 'resource.%s.installed=%s\n' "$rid" "$(download_task_sanitize "$installed")"
+    done <<EOF
+$(do_list_resources)
+EOF
+
+    printf 'summary.enabled_resource_count=%s\n' "$(download_task_sanitize "$enabled_count")"
+    printf 'summary.installed_resource_count=%s\n' "$(download_task_sanitize "$installed_count")"
 }
 
 github_http_get() {
@@ -606,6 +762,17 @@ download_task_spawn() {
 
     download_task_reset "$mode"
     DOWNLOAD_TASK_STATE="running"
+    DOWNLOAD_TASK_MODE="$mode"
+    DOWNLOAD_TASK_ERROR=""
+    if [ "$mode" = "single" ] && [ -n "$1" ]; then
+        DOWNLOAD_TASK_CURRENT_ID="$1"
+        DOWNLOAD_TASK_CURRENT_STATE="checking"
+        DOWNLOAD_TASK_CURRENT_DETAIL=""
+    else
+        DOWNLOAD_TASK_CURRENT_ID=""
+        DOWNLOAD_TASK_CURRENT_STATE="idle"
+        DOWNLOAD_TASK_CURRENT_DETAIL=""
+    fi
     download_task_write_status
 
     sh "$0" download-task run "$mode" "$@" >/dev/null 2>&1 &
@@ -807,6 +974,12 @@ do_deploy() {
 
 do_deploy_all() {
     do_ensure_dirs
+    if deploy_task_is_running; then
+        log_error "Deploy task already running"
+        return 1
+    fi
+
+    deploy_task_mark_running "正在同步到输入法数据目录"
     log_info "Deploy-all start"
 
     # Build staging in order from resources.conf
@@ -825,21 +998,31 @@ do_deploy_all() {
 
     if [ ! "$(ls -A "$STAGING_DIR" 2>/dev/null)" ]; then
         log_info "Staging empty, nothing to deploy"
+        deploy_task_finish_success "没有可同步的文件"
         return 0
     fi
 
     # Resolve target apps and deploy
-    local target_apps
+    local target_apps deployed_count
     target_apps=$(do_config_get "target_apps" "")
-    do_detect | while IFS='|' read -r pkg label path uid dir_exists; do
+    deployed_count=0
+    while IFS='|' read -r pkg label path uid dir_exists; do
         if [ -z "$target_apps" ] || echo "$target_apps" | grep -q "$pkg"; then
             log_info "Deploy target selected: $pkg"
-            do_deploy "$STAGING_DIR" "$path" "$pkg"
+            if ! do_deploy "$STAGING_DIR" "$path" "$pkg"; then
+                rm -rf "$STAGING_DIR"
+                deploy_task_finish_error "同步到 $pkg 失败"
+                return 1
+            fi
+            deployed_count=$((deployed_count + 1))
         fi
-    done
+    done <<EOF
+$(do_detect)
+EOF
 
     rm -rf "$STAGING_DIR"
     log_info "Deploy-all complete"
+    deploy_task_finish_success "已同步到 ${deployed_count} 个输入法目录"
 }
 
 # ── log ──────────────────────────────────────────────────────
@@ -937,12 +1120,15 @@ case "${1:-}" in
     ensure-dirs)
         do_ensure_dirs
         ;;
+    status)
+        do_status
+        ;;
     clear-download-cache)
         do_clear_download_cache
         ;;
     *)
         echo "Usage: helper.sh <command> [args...]"
-        echo "Commands: detect download unzip download-task deploy deploy-all list-resources add-resource remove-resource reset-resources config version log ensure-dirs clear-download-cache"
+        echo "Commands: detect download unzip download-task deploy deploy-all list-resources add-resource remove-resource reset-resources config version log ensure-dirs status clear-download-cache"
         exit 1
         ;;
 esac

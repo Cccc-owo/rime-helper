@@ -1,6 +1,14 @@
 // commands.ts — Thin wrappers calling helper.sh subcommands
 import { execHelper, execHelperVoid, shellQuote } from './shell'
-import type { DownloadTaskStatus, ResourceId, RimeApp, ResourceDef, ResourceProgressState } from '@/types'
+import type {
+  AppStateSnapshot,
+  DownloadTaskStatus,
+  Resource,
+  ResourceId,
+  RimeApp,
+  ResourceDef,
+  ResourceProgressState,
+} from '@/types'
 
 function splitCsv(value: string): ResourceId[] {
   return value.split(',').map(item => item.trim()).filter(Boolean)
@@ -27,6 +35,55 @@ function parseKeyValueOutput(stdout: string): Record<string, string> {
     acc[line.slice(0, index)] = line.slice(index + 1)
     return acc
   }, {})
+}
+
+function getString(data: Record<string, string>, key: string): string {
+  return data[key]?.trim() ?? ''
+}
+
+function getNumber(data: Record<string, string>, key: string): number {
+  const value = Number.parseInt(getString(data, key), 10)
+  return Number.isFinite(value) ? value : 0
+}
+
+function getBoolean(data: Record<string, string>, key: string): boolean {
+  return getString(data, key) === 'true'
+}
+
+function parseResourcesFromSnapshot(data: Record<string, string>): Resource[] {
+  const resourceIds = Array.from(new Set(
+    Object.keys(data)
+      .filter(key => key.startsWith('resource.') && key.endsWith('.id'))
+      .map(key => key.split('.')[1])
+      .filter(Boolean),
+  ))
+
+  return resourceIds.map(id => ({
+    id,
+    name: getString(data, `resource.${id}.name`),
+    repo: getString(data, `resource.${id}.repo`),
+    strategy: getString(data, `resource.${id}.strategy`) || 'zipball',
+    order: getNumber(data, `resource.${id}.order`),
+    category: getString(data, `resource.${id}.category`) || undefined,
+    enabled: getBoolean(data, `resource.${id}.enabled`),
+    version: getString(data, `resource.${id}.version`),
+    installed: getBoolean(data, `resource.${id}.installed`),
+  })).sort((a, b) => a.order - b.order)
+}
+
+export function parseDownloadTaskStatus(data: Record<string, string>, prefix = ''): DownloadTaskStatus {
+  const key = (name: string) => `${prefix}${name}`
+  return {
+    state: normalizeTaskState(data[key('state')] ?? ''),
+    mode: normalizeTaskMode(data[key('mode')] ?? ''),
+    currentId: data[key('current_id')]?.trim() ? data[key('current_id')].trim() : null,
+    currentState: normalizeProgressState(data[key('current_state')] ?? ''),
+    currentDetail: data[key('current_detail')]?.trim() ?? '',
+    completedIds: splitCsv(data[key('completed_ids')] ?? ''),
+    failedIds: splitCsv(data[key('failed_ids')] ?? ''),
+    error: data[key('error')]?.trim() ?? '',
+    updatedAt: data[key('updated_at')]?.trim() ?? '',
+  }
 }
 
 export async function detectApps(): Promise<RimeApp[]> {
@@ -75,16 +132,29 @@ export async function startDownloadEnabledTask(): Promise<void> {
 export async function getDownloadTaskStatus(): Promise<DownloadTaskStatus> {
   const stdout = await execHelper('download-task', 'status')
   const data = parseKeyValueOutput(stdout)
+  return parseDownloadTaskStatus(data)
+}
+
+export async function getAppStateSnapshot(): Promise<AppStateSnapshot> {
+  const stdout = await execHelper('status')
+  const data = parseKeyValueOutput(stdout)
+
   return {
-    state: normalizeTaskState(data.state ?? ''),
-    mode: normalizeTaskMode(data.mode ?? ''),
-    currentId: data.current_id?.trim() ? data.current_id.trim() : null,
-    currentState: normalizeProgressState(data.current_state ?? ''),
-    currentDetail: data.current_detail?.trim() ?? '',
-    completedIds: splitCsv(data.completed_ids ?? ''),
-    failedIds: splitCsv(data.failed_ids ?? ''),
-    error: data.error?.trim() ?? '',
-    updatedAt: data.updated_at?.trim() ?? '',
+    targetApps: getString(data, 'config.target_apps'),
+    targetCount: getNumber(data, 'config.target_count'),
+    resources: parseResourcesFromSnapshot(data),
+    download: parseDownloadTaskStatus(data, 'download.'),
+    deploy: {
+      state: normalizeTaskState(data['deploy.state'] ?? ''),
+      detail: getString(data, 'deploy.detail'),
+      error: getString(data, 'deploy.error'),
+      updatedAt: getString(data, 'deploy.updated_at'),
+      lastSuccessAt: getString(data, 'deploy.last_success_at'),
+    },
+    summary: {
+      enabledResourceCount: getNumber(data, 'summary.enabled_resource_count'),
+      installedResourceCount: getNumber(data, 'summary.installed_resource_count'),
+    },
   }
 }
 

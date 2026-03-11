@@ -1,43 +1,40 @@
 // useUpdate.ts — Update check and deploy state
 import { ref, readonly } from 'vue'
-import type { UpdateCheckResult, UpdateStatus, ResourceId } from '@/types'
+import type { UpdateCheckResult, ResourceId } from '@/types'
 import { checkResourceUpdate, checkAllUpdates } from '@/api/resources'
-import { configGet, configSet, deployAll } from '@/api/commands'
-import { useResources } from '@/composables/useResources'
+import { deployAll } from '@/api/commands'
+import { useAppState } from '@/composables/useAppState'
 
 const updates = ref<UpdateCheckResult[]>([])
-const status = ref<UpdateStatus | null>(null)
 const checking = ref(false)
 const updating = ref(false)
-const deploying = ref(false)
 const error = ref<string | null>(null)
-const { download, downloadEnabled, downloading: resourceDownloading, error: resourceError } = useResources()
 
 function wait(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms))
 }
 
-async function waitForUpdateTaskCompletion() {
-  while (resourceDownloading.value) {
-    await wait(1000)
-  }
-}
-
-async function finalizeUpdateTask() {
-  if (resourceError.value) {
-    error.value = resourceError.value
-    return
-  }
-
-  const lastUpdate = String(Math.floor(Date.now() / 1000))
-  await configSet('last_update', lastUpdate)
-  status.value = {
-    last_update: lastUpdate,
-  }
-  error.value = null
-}
-
 export function useUpdate() {
+  const appState = useAppState()
+  const deploying = appState.isDeploying
+  const status = appState.updateStatus
+
+  async function waitForUpdateTaskCompletion() {
+    while (appState.isDownloadingAny.value) {
+      await wait(1000)
+      await appState.syncAndMaybeStop()
+    }
+  }
+
+  async function finalizeUpdateTask() {
+    await appState.refresh(true)
+    if (appState.downloadError.value) {
+      error.value = appState.downloadError.value
+      return
+    }
+    error.value = null
+  }
+
   async function check(resourceId?: ResourceId) {
     checking.value = true
     error.value = null
@@ -62,9 +59,9 @@ export function useUpdate() {
     error.value = null
     try {
       if (resourceId) {
-        await download(resourceId)
+        await appState.startResourceDownload(resourceId)
       } else {
-        await downloadEnabled()
+        await appState.startEnabledResourceDownload()
       }
 
       await waitForUpdateTaskCompletion()
@@ -77,23 +74,21 @@ export function useUpdate() {
   }
 
   async function deployToApps() {
-    deploying.value = true
     error.value = null
     try {
       await deployAll()
+      const snapshot = await appState.refresh(true)
+      if (snapshot.deploy.state === 'running') {
+        appState.startPolling()
+      }
     } catch (e) {
       error.value = e instanceof Error ? e.message : String(e)
-    } finally {
-      deploying.value = false
     }
   }
 
   async function loadStatus() {
     try {
-      const lastUpdate = await configGet('last_update', '0')
-      status.value = {
-        last_update: lastUpdate,
-      }
+      await appState.refresh(true)
     } catch (e) {
       error.value = e instanceof Error ? e.message : String(e)
     }

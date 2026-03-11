@@ -2,6 +2,7 @@
 import { onMounted, computed, ref, watch } from 'vue'
 import { useConfig } from '@/composables/useConfig'
 import { useResources } from '@/composables/useResources'
+import { useAppState } from '@/composables/useAppState'
 import { removeResource, resetResources } from '@/api/commands'
 import { useDeployAction } from '@/composables/useDeployAction'
 import ResourceCard from '@/components/ResourceCard.vue'
@@ -30,6 +31,7 @@ const {
   downloading,
   error: resourceError,
 } = useResources()
+const appState = useAppState()
 const deployAction = useDeployAction()
 
 const showAddForm = ref(false)
@@ -238,6 +240,17 @@ async function handleDownload(res: Resource) {
 
     <div v-if="loading" class="state-text">加载中...</div>
     <template v-else>
+      <div class="card summary-card">
+        <div class="summary-item">
+          <div class="meta-text">启用资源</div>
+          <div class="summary-value">{{ appState.enabledResourceCount.value }}</div>
+        </div>
+        <div class="summary-item">
+          <div class="meta-text">已下载资源</div>
+          <div class="summary-value">{{ appState.installedResourceCount.value }}</div>
+        </div>
+      </div>
+
       <div v-if="schemaWarning" class="card warning-card">
         {{ schemaWarning }}
       </div>
@@ -309,6 +322,25 @@ async function handleDownload(res: Resource) {
   color: var(--text-secondary);
   border: 1px dashed var(--outline-variant);
   background: transparent;
+}
+
+.summary-card {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.summary-item {
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--radius-small);
+  background: var(--surface-muted);
+  padding: 10px;
+}
+
+.summary-value {
+  margin-top: 4px;
+  font-size: 18px;
+  font-weight: 650;
 }
 
 .warning-card {

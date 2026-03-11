@@ -4,6 +4,7 @@ import { readLog } from '@/api/commands'
 import { useApps } from '@/composables/useApps'
 import { useConfig } from '@/composables/useConfig'
 import { useUpdate } from '@/composables/useUpdate'
+import { useResources } from '@/composables/useResources'
 import { useDeployAction } from '@/composables/useDeployAction'
 import AppCard from '@/components/AppCard.vue'
 import UpdateCard from '@/components/UpdateCard.vue'
@@ -11,6 +12,7 @@ import StatusBanner from '@/components/StatusBanner.vue'
 
 const { apps, loading: appsLoading, load: loadApps } = useApps()
 const { config, loading: configLoading, load: loadConfig } = useConfig()
+const { resumeDownloadTask } = useResources()
 const {
   updates,
   checking,
@@ -48,10 +50,13 @@ const multiSchemaWarning = computed(() => {
   return ''
 })
 
-onMounted(() => {
-  loadApps()
-  loadConfig()
-  loadStatus()
+onMounted(async () => {
+  await Promise.all([
+    loadApps(),
+    loadConfig(),
+    loadStatus(),
+    resumeDownloadTask(),
+  ])
 })
 
 onUnmounted(() => {
@@ -82,12 +87,13 @@ async function checkAll() {
 
 async function updateAll() {
   deployAction.clear()
-  deployAction.setMessage('正在更新全部启用资源，请稍候...')
+  deployAction.setMessage('正在启动全部启用资源更新...')
   await update()
   if (error.value) {
     deployAction.setError(`${error.value}。详情见日志区域`)
     return
   }
+  await loadStatus()
   await check()
   if (error.value) {
     deployAction.setError(`${error.value}。详情见日志区域`)
@@ -98,12 +104,13 @@ async function updateAll() {
 
 async function handleSingleUpdate(id: string) {
   deployAction.clear()
-  deployAction.setMessage(`正在更新「${id}」...`)
+  deployAction.setMessage(`正在启动「${id}」更新...`)
   await update(id)
   if (error.value) {
     deployAction.setError(`${error.value}。详情见日志区域`)
     return
   }
+  await loadStatus()
   await check(id)
   if (error.value) {
     deployAction.setError(`${error.value}。详情见日志区域`)

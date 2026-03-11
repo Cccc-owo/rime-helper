@@ -1,8 +1,9 @@
 // useUpdate.ts — Update check and deploy state
 import { ref, readonly } from 'vue'
 import type { UpdateCheckResult, UpdateStatus, ResourceId } from '@/types'
-import { checkResourceUpdate, checkAllUpdates, downloadResource, getEnabledResourceIds } from '@/api/resources'
+import { checkResourceUpdate, checkAllUpdates } from '@/api/resources'
 import { configGet, configSet, deployAll } from '@/api/commands'
+import { useResources } from '@/composables/useResources'
 
 const updates = ref<UpdateCheckResult[]>([])
 const status = ref<UpdateStatus | null>(null)
@@ -10,6 +11,31 @@ const checking = ref(false)
 const updating = ref(false)
 const deploying = ref(false)
 const error = ref<string | null>(null)
+const { download, downloadEnabled, downloading: resourceDownloading, error: resourceError } = useResources()
+
+function wait(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms))
+}
+
+async function waitForUpdateTaskCompletion() {
+  while (resourceDownloading.value) {
+    await wait(1000)
+  }
+}
+
+async function finalizeUpdateTask() {
+  if (resourceError.value) {
+    error.value = resourceError.value
+    return
+  }
+
+  const lastUpdate = String(Math.floor(Date.now() / 1000))
+  await configSet('last_update', lastUpdate)
+  status.value = {
+    last_update: lastUpdate,
+  }
+  error.value = null
+}
 
 export function useUpdate() {
   async function check(resourceId?: ResourceId) {
@@ -36,13 +62,13 @@ export function useUpdate() {
     error.value = null
     try {
       if (resourceId) {
-        await downloadResource(resourceId)
+        await download(resourceId)
       } else {
-        for (const rid of await getEnabledResourceIds()) {
-          await downloadResource(rid).catch(() => {})
-        }
+        await downloadEnabled()
       }
-      await configSet('last_update', String(Math.floor(Date.now() / 1000)))
+
+      await waitForUpdateTaskCompletion()
+      await finalizeUpdateTask()
     } catch (e) {
       error.value = e instanceof Error ? e.message : String(e)
     } finally {

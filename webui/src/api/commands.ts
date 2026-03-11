@@ -1,6 +1,33 @@
 // commands.ts — Thin wrappers calling helper.sh subcommands
 import { execHelper, execHelperVoid, shellQuote } from './shell'
-import type { RimeApp, ResourceId, ResourceDef } from '@/types'
+import type { DownloadTaskStatus, ResourceId, RimeApp, ResourceDef, ResourceProgressState } from '@/types'
+
+function splitCsv(value: string): ResourceId[] {
+  return value.split(',').map(item => item.trim()).filter(Boolean)
+}
+
+function normalizeTaskState(value: string): DownloadTaskStatus['state'] {
+  return value === 'running' || value === 'success' || value === 'error' ? value : 'idle'
+}
+
+function normalizeTaskMode(value: string): DownloadTaskStatus['mode'] {
+  return value === 'bulk' ? 'bulk' : 'single'
+}
+
+function normalizeProgressState(value: string): ResourceProgressState {
+  return value === 'checking' || value === 'downloading' || value === 'extracting' || value === 'done' || value === 'error'
+    ? value
+    : 'idle'
+}
+
+function parseKeyValueOutput(stdout: string): Record<string, string> {
+  return stdout.trim().split('\n').reduce<Record<string, string>>((acc, line) => {
+    const index = line.indexOf('=')
+    if (index <= 0) return acc
+    acc[line.slice(0, index)] = line.slice(index + 1)
+    return acc
+  }, {})
+}
 
 export async function detectApps(): Promise<RimeApp[]> {
   const stdout = await execHelper('detect')
@@ -35,6 +62,30 @@ export async function downloadFile(url: string, dest: string): Promise<void> {
 
 export async function unzipFile(file: string, dest: string): Promise<void> {
   await execHelperVoid('unzip', `${shellQuote(file)} ${shellQuote(dest)}`)
+}
+
+export async function startDownloadTask(resourceId: ResourceId): Promise<void> {
+  await execHelperVoid('download-task', `start ${shellQuote(resourceId)}`)
+}
+
+export async function startDownloadEnabledTask(): Promise<void> {
+  await execHelperVoid('download-task', 'start-enabled')
+}
+
+export async function getDownloadTaskStatus(): Promise<DownloadTaskStatus> {
+  const stdout = await execHelper('download-task', 'status')
+  const data = parseKeyValueOutput(stdout)
+  return {
+    state: normalizeTaskState(data.state ?? ''),
+    mode: normalizeTaskMode(data.mode ?? ''),
+    currentId: data.current_id?.trim() ? data.current_id.trim() : null,
+    currentState: normalizeProgressState(data.current_state ?? ''),
+    currentDetail: data.current_detail?.trim() ?? '',
+    completedIds: splitCsv(data.completed_ids ?? ''),
+    failedIds: splitCsv(data.failed_ids ?? ''),
+    error: data.error?.trim() ?? '',
+    updatedAt: data.updated_at?.trim() ?? '',
+  }
 }
 
 export async function deployAll(): Promise<void> {

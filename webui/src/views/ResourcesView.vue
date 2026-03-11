@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, computed, ref } from 'vue'
+import { onMounted, computed, ref, watch } from 'vue'
 import { useConfig } from '@/composables/useConfig'
 import { useResources } from '@/composables/useResources'
 import { removeResource, resetResources } from '@/api/commands'
@@ -24,18 +24,24 @@ const { config, loading, load, setResourceEnabled } = useConfig()
 const {
   download,
   downloadEnabled,
+  resumeDownloadTask,
   getProgress,
   isDownloading,
-  isBulkDownloading,
+  downloading,
   error: resourceError,
 } = useResources()
 const deployAction = useDeployAction()
 
 const showAddForm = ref(false)
 const editingResource = ref<Resource | null>(null)
+const pendingDownloadLabel = ref('')
+const pendingDownloadMode = ref<'single' | 'bulk' | null>(null)
 
-onMounted(() => {
-  load()
+onMounted(async () => {
+  await Promise.all([
+    load(),
+    resumeDownloadTask(),
+  ])
 })
 
 const resources = computed(() => config.value?.resources ?? [])
@@ -93,6 +99,36 @@ const schemaWarning = computed(() => {
   }
   return ''
 })
+
+async function finalizePendingDownload() {
+  if (!pendingDownloadMode.value) return
+
+  const mode = pendingDownloadMode.value
+  const label = pendingDownloadLabel.value
+  pendingDownloadMode.value = null
+  pendingDownloadLabel.value = ''
+
+  await load()
+
+  if (resourceError.value) {
+    deployAction.setError(
+      mode === 'bulk'
+        ? `下载有问题：${resourceError.value}。可在「同步」页查看日志`
+        : `下载「${label}」失败：${resourceError.value}。可在「同步」页查看日志`,
+    )
+    return
+  }
+
+  deployAction.setMessage(mode === 'bulk' ? '已开始的资源下载已完成' : `「${label}」下载完成`)
+}
+
+watch(
+  () => downloading.value,
+  async (active, previous) => {
+    if (active || !previous) return
+    await finalizePendingDownload()
+  },
+)
 
 function closeForm() {
   showAddForm.value = false
@@ -157,36 +193,37 @@ async function handleToggle(resource: Resource, enabled: boolean) {
 
 async function handleDownloadAll() {
   deployAction.clear()
-  deployAction.setMessage('正在下载已启用资源...')
+  deployAction.setMessage('正在启动已启用资源下载...')
+  pendingDownloadMode.value = null
+  pendingDownloadLabel.value = ''
   try {
     await downloadEnabled()
-    await load()
+    pendingDownloadMode.value = 'bulk'
+    deployAction.setMessage('已开始后台下载已启用资源，可在本页查看进度')
+    if (!downloading.value) {
+      await finalizePendingDownload()
+    }
   } catch (e) {
     deployAction.setError(`下载失败：${deployAction.formatError(e)}。可在「同步」页查看日志`)
-    return
   }
-  if (resourceError.value) {
-    deployAction.setError(`下载有问题：${resourceError.value}。可在「同步」页查看日志`)
-    return
-  }
-  deployAction.setMessage('下载完成')
 }
 
 async function handleDownload(res: Resource) {
   deployAction.clear()
-  deployAction.setMessage(`正在下载「${res.name}」...`)
+  deployAction.setMessage(`正在启动「${res.name}」下载...`)
+  pendingDownloadMode.value = null
+  pendingDownloadLabel.value = ''
   try {
     await download(res.id)
-    await load()
+    pendingDownloadMode.value = 'single'
+    pendingDownloadLabel.value = res.name
+    deployAction.setMessage(`已开始后台下载「${res.name}」，可在本页查看进度`)
+    if (!downloading.value) {
+      await finalizePendingDownload()
+    }
   } catch (e) {
     deployAction.setError(`下载「${res.name}」失败：${deployAction.formatError(e)}。可在「同步」页查看日志`)
-    return
   }
-  if (resourceError.value) {
-    deployAction.setError(`下载「${res.name}」失败：${resourceError.value}。可在「同步」页查看日志`)
-    return
-  }
-  deployAction.setMessage(`「${res.name}」下载完成`)
 }
 </script>
 
@@ -249,17 +286,17 @@ async function handleDownload(res: Resource) {
         </button>
         <button
           class="btn btn-outline btn-block"
-          :disabled="isBulkDownloading()"
+          :disabled="downloading"
           @click="handleResetResources"
         >
           恢复默认资源列表
         </button>
         <button
           class="btn btn-primary btn-block"
-          :disabled="isBulkDownloading()"
+          :disabled="downloading"
           @click="handleDownloadAll"
         >
-          {{ isBulkDownloading() ? '下载中...' : '下载全部启用资源' }}
+          {{ downloading ? '下载中...' : '下载全部启用资源' }}
         </button>
       </div>
     </template>

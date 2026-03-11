@@ -52,10 +52,27 @@ export interface UpdateStatus {
   last_update: string
 }
 
+export type ResourceProgressState = 'idle' | 'checking' | 'downloading' | 'extracting' | 'done' | 'error'
+
 export interface ResourceProgress {
   id: ResourceId
-  state: 'idle' | 'checking' | 'downloading' | 'extracting' | 'done' | 'error'
+  state: ResourceProgressState
   detail: string
+}
+
+export type DownloadTaskState = 'idle' | 'running' | 'success' | 'error'
+export type DownloadTaskMode = 'single' | 'bulk'
+
+export interface DownloadTaskStatus {
+  state: DownloadTaskState
+  mode: DownloadTaskMode
+  currentId: ResourceId | null
+  currentState: ResourceProgressState
+  currentDetail: string
+  completedIds: ResourceId[]
+  failedIds: ResourceId[]
+  error: string
+  updatedAt: string
 }
 
 export type ViewName = 'resources' | 'deploy' | 'settings'

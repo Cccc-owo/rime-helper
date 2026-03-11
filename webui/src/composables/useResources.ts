@@ -1,24 +1,19 @@
 // useResources.ts — Resource download state management
 import { ref, readonly } from 'vue'
-import type { ResourceProgress, ResourceId } from '@/types'
-import {
-  downloadResource,
-  downloadAllEnabled,
-} from '@/api/resources'
+import type { DownloadTaskStatus, ResourceId, ResourceProgress, ResourceProgressState } from '@/types'
+import { getDownloadTaskStatus, startDownloadEnabledTask, startDownloadTask } from '@/api/commands'
 
 const progress = ref<ResourceProgress[]>([])
 const downloading = ref(false)
 const currentResourceId = ref<ResourceId | null>(null)
 const bulkDownloading = ref(false)
 const error = ref<string | null>(null)
+let pollTimer: ReturnType<typeof setInterval> | null = null
+let lastTaskFingerprint = ''
 
-function updateProgress(id: ResourceId, state: string, detail: string) {
+function updateProgress(id: ResourceId, state: ResourceProgressState, detail: string) {
   const existing = progress.value.find(p => p.id === id)
-  const entry: ResourceProgress = {
-    id,
-    state: state as ResourceProgress['state'],
-    detail,
-  }
+  const entry: ResourceProgress = { id, state, detail }
   if (existing) {
     Object.assign(existing, entry)
   } else {
@@ -62,22 +57,106 @@ async function yieldToUiPaint() {
   })
 }
 
+function stopPolling() {
+  if (!pollTimer) return
+  clearInterval(pollTimer)
+  pollTimer = null
+}
+
+function resetTaskTracking() {
+  lastTaskFingerprint = ''
+}
+
+function applyTaskStatus(status: DownloadTaskStatus) {
+  downloading.value = status.state === 'running'
+  bulkDownloading.value = status.mode === 'bulk' && status.state === 'running'
+  currentResourceId.value = status.mode === 'single' && status.state === 'running' ? status.currentId : null
+
+  for (const id of status.completedIds) {
+    const existing = progress.value.find(item => item.id === id)
+    if (!existing || existing.state !== 'done') {
+      updateProgress(id, 'done', existing?.detail || '完成')
+    }
+  }
+
+  for (const id of status.failedIds) {
+    const existing = progress.value.find(item => item.id === id)
+    if (!existing || existing.state !== 'error') {
+      updateProgress(id, 'error', existing?.detail || '失败')
+    }
+  }
+
+  if (status.currentId) {
+    updateProgress(status.currentId, status.currentState, status.currentDetail)
+  }
+
+  if (status.state === 'error') {
+    error.value = status.error || status.currentDetail || '下载失败'
+    if (status.currentId) {
+      updateProgress(status.currentId, 'error', error.value)
+    }
+    stopPolling()
+    currentResourceId.value = null
+    bulkDownloading.value = false
+    downloading.value = false
+    return
+  }
+
+  if (status.state === 'success' || status.state === 'idle') {
+    error.value = null
+    stopPolling()
+    currentResourceId.value = null
+    bulkDownloading.value = false
+    downloading.value = false
+  }
+}
+
+async function loadTaskStatus() {
+  const status = await getDownloadTaskStatus()
+  const fingerprint = JSON.stringify(status)
+  if (fingerprint === lastTaskFingerprint) return status
+  lastTaskFingerprint = fingerprint
+  applyTaskStatus(status)
+  return status
+}
+
+function startPolling() {
+  if (pollTimer) return
+  pollTimer = setInterval(() => {
+    loadTaskStatus().catch(e => {
+      error.value = e instanceof Error ? e.message : String(e)
+      downloading.value = false
+      bulkDownloading.value = false
+      currentResourceId.value = null
+      stopPolling()
+    })
+  }, 1000)
+}
+
+async function resumeDownloadTask() {
+  const status = await loadTaskStatus()
+  if (status.state === 'running') {
+    startPolling()
+  }
+  return status
+}
+
 export function useResources() {
   async function download(resourceId: ResourceId) {
     downloading.value = true
     bulkDownloading.value = false
     currentResourceId.value = resourceId
     error.value = null
+    updateProgress(resourceId, 'checking', '')
+    resetTaskTracking()
     await yieldToUiPaint()
     try {
-      await downloadResource(resourceId, (id, state, detail) => {
-        updateProgress(id, state, detail)
-      })
+      await startDownloadTask(resourceId)
+      await resumeDownloadTask()
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e)
       error.value = message
       updateProgress(resourceId, 'error', message)
-    } finally {
       currentResourceId.value = null
       downloading.value = false
     }
@@ -88,16 +167,16 @@ export function useResources() {
     bulkDownloading.value = true
     currentResourceId.value = null
     error.value = null
+    resetTaskTracking()
     await yieldToUiPaint()
     try {
-      await downloadAllEnabled((id, state, detail) => {
-        updateProgress(id, state, detail)
-      })
+      await startDownloadEnabledTask()
+      await resumeDownloadTask()
     } catch (e) {
-      error.value = e instanceof Error ? e.message : String(e)
-    } finally {
-      bulkDownloading.value = false
+      const message = e instanceof Error ? e.message : String(e)
+      error.value = message
       downloading.value = false
+      bulkDownloading.value = false
     }
   }
 
@@ -123,8 +202,12 @@ export function useResources() {
     error: readonly(error),
     download,
     downloadEnabled,
+    resumeDownloadTask,
     getProgress,
     isDownloading,
     isBulkDownloading,
+    loadTaskStatus,
+    startPolling,
+    stopPolling,
   }
 }

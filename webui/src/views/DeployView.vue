@@ -22,8 +22,6 @@ const {
   check,
   update,
   deployToApps,
-  status,
-  loadStatus,
 } = useUpdate()
 const appState = useAppState()
 
@@ -46,6 +44,7 @@ const targetAppsText = computed(() => {
 const deployDetail = computed(() => appState.deploy.value.detail)
 const deployError = computed(() => appState.deploy.value.error)
 const deployState = computed(() => appState.deploy.value.state)
+const updateStatus = appState.updateStatus
 
 const multiSchemaWarning = computed(() => {
   const enabledSchemas = (config.value?.resources ?? [])
@@ -63,7 +62,7 @@ onMounted(async () => {
   await Promise.all([
     loadApps(),
     loadConfig(),
-    loadStatus(),
+    appState.refresh(true),
     resumeDownloadTask(),
   ])
 })
@@ -102,7 +101,6 @@ async function updateAll() {
     deployAction.setError(`${error.value}。详情见日志区域`)
     return
   }
-  await loadStatus()
   await check()
   if (error.value) {
     deployAction.setError(`${error.value}。详情见日志区域`)
@@ -119,7 +117,6 @@ async function handleSingleUpdate(id: string) {
     deployAction.setError(`${error.value}。详情见日志区域`)
     return
   }
-  await loadStatus()
   await check(id)
   if (error.value) {
     deployAction.setError(`${error.value}。详情见日志区域`)
@@ -196,11 +193,11 @@ async function toggleLogExpanded() {
         </div>
         <div class="status-item">
           <div class="meta-text">上次下载完成</div>
-          <div class="status-value small">{{ formatTime(status.last_download_completed_at) }}</div>
+          <div class="status-value small">{{ formatTime(updateStatus.last_download_completed_at) }}</div>
         </div>
         <div class="status-item">
           <div class="meta-text">上次同步完成</div>
-          <div class="status-value small">{{ formatTime(status.last_deploy_completed_at) }}</div>
+          <div class="status-value small">{{ formatTime(updateStatus.last_deploy_completed_at) }}</div>
         </div>
         <div class="status-item">
           <div class="meta-text">同步目标</div>

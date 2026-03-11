@@ -16,8 +16,6 @@ function wait(ms: number): Promise<void> {
 
 export function useUpdate() {
   const appState = useAppState()
-  const deploying = appState.isDeploying
-  const status = appState.updateStatus
 
   async function waitForUpdateTaskCompletion() {
     while (appState.isDownloadingAny.value) {
@@ -86,24 +84,13 @@ export function useUpdate() {
     }
   }
 
-  async function loadStatus() {
-    try {
-      await appState.refresh(true)
-    } catch (e) {
-      error.value = e instanceof Error ? e.message : String(e)
-    }
-  }
-
   return {
     updates: readonly(updates),
-    status: readonly(status),
     checking: readonly(checking),
     updating: readonly(updating),
-    deploying: readonly(deploying),
     error: readonly(error),
     check,
     update,
     deployToApps,
-    loadStatus,
   }
 }

@@ -63,7 +63,7 @@ body {
 
 .app {
   min-height: 100vh;
-  padding-bottom: 92px;
+  padding-bottom: 104px;
 }
 
 .main-content {

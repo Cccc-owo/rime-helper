@@ -1,11 +1,15 @@
 // shell.ts — kernelsu exec wrapper
 
-import { exec } from 'kernelsu'
+import { exec, toast } from 'kernelsu'
 
 interface ExecResult {
   errno: number
   stdout: string
   stderr: string
+}
+
+interface KernelSuHost {
+  close?: () => void
 }
 
 // Module paths following KernelSU module convention
@@ -27,6 +31,24 @@ async function ksuExec(command: string): Promise<ExecResult> {
     console.warn('[shell] kernelsu not available, returning mock')
     return { errno: -1, stdout: '', stderr: 'kernelsu not available' }
   }
+}
+
+export function closeWebUi(): void {
+  const host = (globalThis as typeof globalThis & { ksu?: KernelSuHost }).ksu
+  if (typeof host?.close === 'function') {
+    host.close()
+    return
+  }
+
+  if (typeof window.close === 'function') {
+    window.close()
+    setTimeout(() => {
+      toast('当前宿主未提供直接关闭能力，请手动退出 WebUI')
+    }, 150)
+    return
+  }
+
+  toast('当前宿主未提供直接关闭能力，请手动退出 WebUI')
 }
 
 /** Run helper.sh with given subcommand and args, return stdout */

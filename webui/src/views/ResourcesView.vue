@@ -25,7 +25,6 @@ const { config, loading, load, setResourceEnabled } = useConfig()
 const {
   download,
   downloadEnabled,
-  resumeDownloadTask,
   getProgress,
   isDownloading,
   downloading,
@@ -39,14 +38,14 @@ const editingResource = ref<Resource | null>(null)
 const pendingDownloadLabel = ref('')
 const pendingDownloadMode = ref<'single' | 'bulk' | null>(null)
 
-onMounted(async () => {
-  await Promise.all([
-    load(),
-    resumeDownloadTask(),
-  ])
+onMounted(() => {
+  void appState.resumeTasks()
 })
 
 const resources = computed(() => config.value?.resources ?? [])
+const hasSnapshot = computed(() => appState.snapshot.value !== null)
+const showLoadingState = computed(() => loading.value && !hasSnapshot.value)
+const showRefreshingHint = computed(() => loading.value && hasSnapshot.value)
 const existingIds = computed(() => resources.value.map(item => item.id))
 const opMessage = computed(() => deployAction.message.value)
 const opError = computed(() => deployAction.error.value)
@@ -238,8 +237,10 @@ async function handleDownload(res: Resource) {
       本页仅用于资源管理，不执行文件同步。
     </div>
 
-    <div v-if="loading" class="state-text">加载中...</div>
+    <div v-if="showLoadingState" class="state-text">加载中...</div>
     <template v-else>
+      <div v-if="showRefreshingHint" class="state-text refreshing-text">正在刷新最新状态...</div>
+
       <div class="card summary-card">
         <div class="summary-item">
           <div class="meta-text">启用资源</div>
@@ -322,6 +323,12 @@ async function handleDownload(res: Resource) {
   color: var(--text-secondary);
   border: 1px dashed var(--outline-variant);
   background: transparent;
+}
+
+.refreshing-text {
+  padding: 0;
+  text-align: left;
+  font-size: 12px;
 }
 
 .summary-card {

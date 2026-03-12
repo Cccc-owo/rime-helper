@@ -7,20 +7,22 @@ import { clearDownloadCache } from '@/api/commands'
 
 const {
   loading,
-  load,
   setTargetApps,
 } = useConfig()
-const { apps, load: loadApps } = useApps()
+const { apps, load: loadApps, loading: appsLoading } = useApps()
 const appState = useAppState()
 const clearingCache = ref(false)
 const cacheMessage = ref('')
 const cacheError = ref('')
 
 onMounted(() => {
-  load()
-  loadApps()
+  void appState.refresh(true)
+  void loadApps()
 })
 
+const hasSnapshot = computed(() => appState.snapshot.value !== null)
+const showLoadingState = computed(() => loading.value && !hasSnapshot.value)
+const showRefreshingHint = computed(() => loading.value && hasSnapshot.value)
 const targetAppList = computed(() => {
   const str = appState.targetApps.value
   return str ? str.split(',').filter(Boolean) : []
@@ -64,8 +66,10 @@ async function clearCache() {
     <h1 class="section-title">设置</h1>
     <p class="section-desc">用于配置同步目标与缓存清理。</p>
 
-    <div v-if="loading" class="state-text">加载中...</div>
+    <div v-if="showLoadingState" class="state-text">加载中...</div>
     <template v-else>
+      <div v-if="showRefreshingHint" class="state-text refreshing-text">正在刷新最新状态...</div>
+
       <div class="card summary-card">
         <div class="summary-item">
           <div class="meta-text">当前同步范围</div>
@@ -93,7 +97,8 @@ async function clearCache() {
             <span class="app-pkg">{{ app.package }}</span>
           </label>
         </div>
-        <div v-if="apps.length === 0" class="state-text">未检测到可用输入法应用</div>
+        <div v-if="appsLoading" class="state-text">正在检测输入法应用...</div>
+        <div v-else-if="apps.length === 0" class="state-text">未检测到可用输入法应用</div>
       </div>
 
       <div class="card">
@@ -113,6 +118,12 @@ async function clearCache() {
 </template>
 
 <style scoped>
+.refreshing-text {
+  padding: 0;
+  text-align: left;
+  font-size: 12px;
+}
+
 .summary-card {
   display: grid;
   grid-template-columns: 1fr 1fr;

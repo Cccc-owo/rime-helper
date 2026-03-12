@@ -4,7 +4,6 @@ import { readLog } from '@/api/commands'
 import { useApps } from '@/composables/useApps'
 import { useConfig } from '@/composables/useConfig'
 import { useUpdate } from '@/composables/useUpdate'
-import { useResources } from '@/composables/useResources'
 import { useAppState } from '@/composables/useAppState'
 import { useDeployAction } from '@/composables/useDeployAction'
 import AppCard from '@/components/AppCard.vue'
@@ -12,8 +11,7 @@ import UpdateCard from '@/components/UpdateCard.vue'
 import StatusBanner from '@/components/StatusBanner.vue'
 
 const { apps, loading: appsLoading, load: loadApps } = useApps()
-const { config, loading: configLoading, load: loadConfig } = useConfig()
-const { resumeDownloadTask } = useResources()
+const { config, loading: configLoading } = useConfig()
 const {
   updates,
   checking,
@@ -37,6 +35,8 @@ const lastRefreshedAt = ref('')
 let refreshTimer: ReturnType<typeof setInterval> | null = null
 
 const enabledResourceCount = computed(() => appState.enabledResourceCount.value)
+const hasSnapshot = computed(() => appState.snapshot.value !== null)
+const showRefreshingHint = computed(() => configLoading.value && hasSnapshot.value)
 const targetAppsText = computed(() => {
   const value = config.value?.target_apps ?? ''
   return value ? '已指定' : '全部应用'
@@ -58,13 +58,9 @@ const multiSchemaWarning = computed(() => {
   return ''
 })
 
-onMounted(async () => {
-  await Promise.all([
-    loadApps(),
-    loadConfig(),
-    appState.refresh(true),
-    resumeDownloadTask(),
-  ])
+onMounted(() => {
+  void loadApps()
+  void appState.resumeTasks()
 })
 
 onUnmounted(() => {
@@ -182,6 +178,8 @@ async function toggleLogExpanded() {
       <div class="section-head">
         <h2 class="card-title">同步状态</h2>
       </div>
+      <div v-if="showRefreshingHint" class="state-text refreshing-text">正在刷新最新状态...</div>
+
       <div class="status-grid card">
         <div class="status-item">
           <div class="meta-text">检测到应用</div>
@@ -281,6 +279,12 @@ async function toggleLogExpanded() {
 </template>
 
 <style scoped>
+.refreshing-text {
+  padding: 0;
+  text-align: left;
+  font-size: 12px;
+}
+
 .section {
   margin-bottom: 16px;
 }

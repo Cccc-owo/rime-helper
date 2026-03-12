@@ -9,4 +9,5 @@ declare module '*.vue' {
 declare module 'kernelsu' {
   export function exec(command: string): Promise<{ errno: number; stdout: string; stderr: string }>
   export function toast(message: string): void
+  export function fullScreen(isFullScreen: boolean): void
 }

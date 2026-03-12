@@ -2,7 +2,6 @@
 import { ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { NavItem, ViewName } from '@/types'
-import { closeWebUi } from '@/api/shell'
 
 const router = useRouter()
 const route = useRoute()
@@ -46,19 +45,17 @@ async function navigate(name: ViewName) {
 
 <template>
   <nav class="navbar-wrap">
-    <div class="navbar">
+    <div class="navbar" role="tablist" aria-label="主导航">
       <button
         v-for="item in navItems"
         :key="item.name"
         class="nav-item"
         :class="{ active: isActive(item.name), pending: isPending(item.name) }"
+        :aria-selected="isActive(item.name)"
         @click="navigate(item.name)"
       >
-        <span class="nav-indicator"></span>
+        <span class="nav-icon" aria-hidden="true"></span>
         <span class="nav-label">{{ item.label }}</span>
-      </button>
-      <button class="nav-close" @click="closeWebUi" aria-label="关闭 WebUI">
-        <span class="nav-close-icon">×</span>
       </button>
     </div>
   </nav>
@@ -70,114 +67,94 @@ async function navigate(name: ViewName) {
   left: 0;
   right: 0;
   bottom: 0;
-  padding: 10px 12px calc(12px + env(safe-area-inset-bottom));
+  padding: 0 12px calc(12px + env(safe-area-inset-bottom));
   z-index: 100;
   pointer-events: none;
 }
 
 .navbar {
   max-width: 640px;
+  min-height: 80px;
   margin: 0 auto;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px;
-  border: 1px solid color-mix(in srgb, var(--outline-variant) 82%, transparent);
-  border-radius: 18px;
-  background: color-mix(in srgb, var(--bg) 84%, var(--surface) 16%);
-  box-shadow: var(--shadow-2);
-  backdrop-filter: blur(14px);
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: stretch;
+  padding: 8px 6px 10px;
+  border-top: 1px solid color-mix(in srgb, var(--outline-variant) 88%, transparent);
+  background: color-mix(in srgb, var(--bg) 92%, var(--surface) 8%);
+  box-shadow: 0 -8px 24px color-mix(in srgb, var(--bg) 20%, transparent);
+  backdrop-filter: blur(18px);
   pointer-events: auto;
 }
 
 .nav-item {
-  flex: 1;
-  min-height: 46px;
+  position: relative;
+  min-height: 62px;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 5px;
+  gap: 6px;
   padding: 8px 6px;
   border: none;
-  border-radius: 14px;
+  border-radius: 16px;
   background: transparent;
   cursor: pointer;
   color: var(--text-tertiary);
-  transition: color 0.18s ease, background-color 0.18s ease, transform 0.18s ease, opacity 0.18s ease, box-shadow 0.18s ease;
+  transition: color 0.18s ease, background-color 0.18s ease, transform 0.18s ease, opacity 0.18s ease;
 }
 
 .nav-item:hover {
   color: var(--text-secondary);
-  background: color-mix(in srgb, var(--surface-muted) 70%, transparent);
+  background: color-mix(in srgb, var(--surface-muted) 58%, transparent);
 }
 
 .nav-item:active {
   transform: translateY(1px);
-  background: color-mix(in srgb, var(--surface-muted) 88%, transparent);
 }
 
-.nav-item:focus-visible,
-.nav-close:focus-visible {
+.nav-item:focus-visible {
   outline: 2px solid color-mix(in srgb, var(--primary) 60%, transparent);
-  outline-offset: 1px;
+  outline-offset: -2px;
 }
 
 .nav-item.active {
   color: var(--primary);
-  background: color-mix(in srgb, var(--primary-soft) 76%, transparent);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary) 16%, transparent);
 }
 
 .nav-item.pending {
   opacity: 0.72;
 }
 
-.nav-close {
-  flex: 0 0 auto;
-  width: 46px;
-  height: 46px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: none;
-  border-radius: 14px;
-  background: color-mix(in srgb, var(--error-soft) 88%, var(--surface) 12%);
-  color: var(--error);
-  cursor: pointer;
-  transition: background-color 0.18s ease, transform 0.18s ease, color 0.18s ease;
+.nav-icon {
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface-muted) 76%, transparent);
+  transition: background-color 0.18s ease, transform 0.18s ease, box-shadow 0.18s ease;
 }
 
-.nav-close:hover {
-  background: color-mix(in srgb, var(--error-soft) 100%, var(--surface) 0%);
+.nav-item.active .nav-icon {
+  background: color-mix(in srgb, var(--primary-soft) 90%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary) 22%, transparent);
+  transform: scale(1.02);
 }
 
-.nav-close:active {
-  transform: translateY(1px);
-}
-
-.nav-close-icon {
-  font-size: 22px;
-  line-height: 1;
-  font-weight: 500;
-}
-
-.nav-indicator {
-  width: 14px;
+.nav-item.active::before {
+  content: '';
+  position: absolute;
+  top: 4px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 30px;
   height: 3px;
   border-radius: 999px;
-  background: transparent;
-  transition: background-color 0.2s ease, width 0.2s ease;
-}
-
-.nav-item.active .nav-indicator {
-  width: 22px;
   background: var(--primary);
 }
 
 .nav-label {
   font-size: 12px;
   font-weight: 600;
-  letter-spacing: 0.1px;
+  letter-spacing: 0.15px;
 }
 </style>

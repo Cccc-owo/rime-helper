@@ -10,15 +10,15 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@material/web": "^2.4.0",
-    "@solidjs/router": "^0.15.3",
-    "kernelsu": "^1.0.0",
-    "solid-js": "^1.9.7"
+    "@material/web": "^2.4.1",
+    "@solidjs/router": "^0.16.1",
+    "kernelsu": "^3.0.2",
+    "solid-js": "^1.9.12"
   },
   "devDependencies": {
-    "typescript": "^5.7.3",
-    "vite": "^6.2.0",
-    "vite-plugin-solid": "^2.11.6"
+    "typescript": "^6.0.2",
+    "vite": "^8.0.3",
+    "vite-plugin-solid": "^2.11.11"
   },
-  "packageManager": "pnpm@10.6.2"
+  "packageManager": "pnpm@10.33.0"
 }

@@ -1,5 +1,4 @@
-// shell.ts — kernelsu exec wrapper
-
+// @ts-ignore kernelsu package does not ship type declarations
 import { exec } from 'kernelsu'
 
 interface ExecResult {
@@ -8,12 +7,8 @@ interface ExecResult {
   stderr: string
 }
 
-// Module paths following KernelSU module convention
 const MODULE_DIR = '/data/adb/modules/rime_helper'
 const HELPER = `${MODULE_DIR}/scripts/helper.sh`
-
-// Persistent data dir (survives module updates)
-export const PERSIST_DIR = '/data/adb/rime_helper'
 
 export function shellQuote(input: string): string {
   return `'${input.replace(/'/g, `"'"'`)}'`
@@ -21,16 +16,13 @@ export function shellQuote(input: string): string {
 
 async function ksuExec(command: string): Promise<ExecResult> {
   try {
-    const result = await exec(command)
-    return result as ExecResult
+    return await exec(command) as ExecResult
   } catch {
-    console.warn('[shell] kernelsu not available, returning mock')
     return { errno: -1, stdout: '', stderr: 'kernelsu not available' }
   }
 }
 
-/** Run helper.sh with given subcommand and args, return stdout */
-export async function execHelper(subcommand: string, args: string = ''): Promise<string> {
+export async function execHelper(subcommand: string, args = ''): Promise<string> {
   const cmd = `sh ${HELPER} ${subcommand} ${args}`.trim()
   const result = await ksuExec(cmd)
   if (result.errno !== 0 && !result.stdout) {
@@ -39,8 +31,7 @@ export async function execHelper(subcommand: string, args: string = ''): Promise
   return result.stdout
 }
 
-/** Run helper.sh, only check exit code (no stdout needed) */
-export async function execHelperVoid(subcommand: string, args: string = ''): Promise<void> {
+export async function execHelperVoid(subcommand: string, args = ''): Promise<void> {
   const cmd = `sh ${HELPER} ${subcommand} ${args}`.trim()
   const result = await ksuExec(cmd)
   if (result.errno !== 0) {

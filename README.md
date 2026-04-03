@@ -35,7 +35,7 @@
 module/          KernelSU/Magisk 模块目录（打包后 ZIP 根）
   scripts/       Shell 脚本库（BusyBox ash 兼容）
   webroot/       WebUI 构建产物（自动生成）
-webui/           Vue 3 + TypeScript 前端源码
+webui/           SolidJS + TypeScript 前端源码
 build.sh         本地构建脚本
 ```
 
@@ -44,8 +44,8 @@ build.sh         本地构建脚本
 ### 1) 构建 WebUI
 
 ```sh
-npm --prefix webui install
-npm --prefix webui run build
+pnpm --dir webui install
+pnpm --dir webui run build
 ```
 
 构建产物输出到：`module/webroot/`

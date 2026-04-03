@@ -1,9 +1,9 @@
 import { defineConfig } from 'vite'
-import vue from '@vitejs/plugin-vue'
+import solid from 'vite-plugin-solid'
 import { fileURLToPath, URL } from 'node:url'
 
 export default defineConfig({
-  plugins: [vue()],
+  plugins: [solid()],
   base: './',
   build: {
     outDir: fileURLToPath(new URL('../module/webroot', import.meta.url)),

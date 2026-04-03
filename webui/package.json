@@ -5,18 +5,20 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vue-tsc --noEmit && vite build",
-    "preview": "vite preview"
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@material/web": "^2.4.0",
+    "@solidjs/router": "^0.15.3",
     "kernelsu": "^1.0.0",
-    "vue": "^3.5.13",
-    "vue-router": "^4.5.0"
+    "solid-js": "^1.9.7"
   },
   "devDependencies": {
-    "@vitejs/plugin-vue": "^5.2.3",
     "typescript": "^5.7.3",
     "vite": "^6.2.0",
-    "vue-tsc": "^2.2.8"
-  }
+    "vite-plugin-solid": "^2.11.6"
+  },
+  "packageManager": "pnpm@10.6.2"
 }

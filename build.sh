@@ -16,15 +16,14 @@ sed -i "s/^versionCode=.*/versionCode=$VERSION_CODE/" module/module.prop
 
 # Build WebUI
 echo "--- Building WebUI ---"
-cd webui
-if [ ! -d node_modules ]; then
+if [ ! -f webui/pnpm-lock.yaml ]; then
     echo "Installing dependencies..."
-    npm install
+    pnpm --dir webui install
+else
+    pnpm --dir webui install --frozen-lockfile
 fi
-npm run build
-cd ..
+pnpm --dir webui run build
 
-# Remove gitkeep from webroot after build
 mkdir -p module/webroot
 
 # Package ZIP

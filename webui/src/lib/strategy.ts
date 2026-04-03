@@ -1,12 +1,8 @@
-export type ResourceStrategyType = 'zipball' | 'asset' | 'asset-files' | 'archive'
-
 export interface ParsedStrategy {
-  type: ResourceStrategyType
+  type: 'zipball' | 'asset' | 'asset-files' | 'archive'
   pattern?: string
   tag?: string
 }
-
-const VALID_TYPES: readonly ResourceStrategyType[] = ['zipball', 'asset', 'asset-files', 'archive']
 
 export function parseStrategy(raw: string): ParsedStrategy {
   if (!raw || raw === 'zipball') return { type: 'zipball' }
@@ -34,28 +30,20 @@ export function parseStrategy(raw: string): ParsedStrategy {
     }
   }
 
-  if (!VALID_TYPES.includes(type as ResourceStrategyType)) {
-    throw new Error(`Unsupported strategy type: ${type}`)
+  if (type !== 'zipball' && type !== 'asset' && type !== 'asset-files' && type !== 'archive') {
+    throw new Error(`Unsupported strategy: ${type}`)
   }
 
-  if ((type === 'asset' || type === 'asset-files') && !pattern) {
-    throw new Error(`Strategy ${type} requires a pattern`)
-  }
-
-  return {
-    type: type as ResourceStrategyType,
-    pattern: pattern || undefined,
-    tag: tag || undefined,
-  }
+  return { type, pattern, tag } as ParsedStrategy
 }
 
 export function buildStrategy(type: string, pattern: string, tag: string): string {
-  let strategy = type || 'zipball'
-  const trimmedPattern = pattern.trim()
-  const trimmedTag = tag.trim()
+  const normalized = type || 'zipball'
+  const p = pattern.trim()
+  const t = tag.trim()
 
-  if (trimmedPattern) strategy += `:${trimmedPattern}`
-  if (trimmedTag) strategy += `@${trimmedTag}`
-
-  return strategy
+  let result = normalized
+  if (p) result += `:${p}`
+  if (t) result += `@${t}`
+  return result
 }

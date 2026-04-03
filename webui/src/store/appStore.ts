@@ -26,6 +26,8 @@ const [state, setState] = createStore<AppState>(initialState)
 
 let pollTimer: ReturnType<typeof setInterval> | null = null
 let logTimer: ReturnType<typeof setInterval> | null = null
+const TASK_WAIT_TIMEOUT_MS = 5 * 60 * 1000
+const SNAPSHOT_FAIL_LIMIT = 5
 
 function setMessage(message: string) {
   setState({ message, error: '' })
@@ -59,14 +61,17 @@ export function isBackendTaskRunning(): boolean {
   return isDownloadTaskRunning() || isDeployTaskRunning()
 }
 
-export async function refreshSnapshot(forceLoading = false) {
+export async function refreshSnapshot(forceLoading = false, throwOnError = false): Promise<boolean> {
   if (forceLoading) setState('loading', true)
   try {
     const snapshot = await getSnapshot()
     setState({ snapshot, loading: false })
+    return true
   } catch (e) {
     setState('loading', false)
     setError(e instanceof Error ? e.message : String(e))
+    if (throwOnError) throw e
+    return false
   }
 }
 
@@ -162,34 +167,61 @@ export async function checkUpdates(resourceId?: ResourceId) {
   }
 }
 
-async function waitForDownloadDone() {
-  while (state.snapshot?.download.state === 'running') {
+async function waitForTaskDone(task: 'download' | 'deploy') {
+  const startedAt = Date.now()
+  const taskLabel = task === 'download' ? '下载' : '同步'
+  let refreshFailureCount = 0
+
+  while (true) {
+    const currentState = state.snapshot?.[task].state
+    if (currentState && currentState !== 'running') return
+    if (Date.now() - startedAt > TASK_WAIT_TIMEOUT_MS) {
+      throw new Error(`等待${taskLabel}任务超时，请重试`)
+    }
     await new Promise(resolve => setTimeout(resolve, 900))
-    await refreshSnapshot()
+    try {
+      await refreshSnapshot(false, true)
+      refreshFailureCount = 0
+    } catch {
+      refreshFailureCount += 1
+      if (refreshFailureCount >= SNAPSHOT_FAIL_LIMIT) {
+        throw new Error(`状态刷新连续失败，无法确认${taskLabel}任务进度`)
+      }
+    }
   }
 }
 
-export async function updateResources(resourceId?: ResourceId) {
+async function runDownloadPhase(start: () => Promise<void>, startedMessage: string) {
+  await start()
+  setMessage(startedMessage)
+  await refreshSnapshot(true, true)
+  startPolling()
+  await waitForTaskDone('download')
+  await refreshSnapshot(false, true)
+
+  if (state.snapshot?.download.state === 'error') {
+    throw new Error(state.snapshot.download.error || '下载任务失败')
+  }
+}
+
+async function runDeployPhase() {
+  await deployAll()
+  setMessage('已开始同步到数据目录')
+  await refreshSnapshot(true, true)
+  startPolling()
+  await waitForTaskDone('deploy')
+  await refreshSnapshot(false, true)
+
+  if (state.snapshot?.deploy.state === 'error') {
+    throw new Error(state.snapshot.deploy.error || '同步任务失败')
+  }
+}
+
+export async function updateResources(resourceId: ResourceId) {
   clearFeedback()
   setState('updating', true)
   try {
-    if (resourceId) {
-      await startDownload(resourceId)
-      setMessage(`已启动资源 ${resourceId} 下载`)
-    } else {
-      await startDownloadEnabled()
-      setMessage('已启动全部启用资源下载')
-    }
-
-    await refreshSnapshot(true)
-    startPolling()
-    await waitForDownloadDone()
-    await refreshSnapshot()
-
-    if (state.snapshot?.download.state === 'error') {
-      throw new Error(state.snapshot.download.error || '下载任务失败')
-    }
-
+    await runDownloadPhase(() => startDownload(resourceId), `已启动资源 ${resourceId} 下载`)
     setMessage('下载任务已完成')
   } catch (e) {
     setError(e instanceof Error ? e.message : String(e))
@@ -198,15 +230,31 @@ export async function updateResources(resourceId?: ResourceId) {
   }
 }
 
-export async function deployToApps() {
+export async function syncEnabledResources() {
   clearFeedback()
+  setState('updating', true)
   try {
-    await deployAll()
-    setMessage('已提交同步任务')
-    await refreshSnapshot(true)
-    startPolling()
+    await runDownloadPhase(() => startDownloadEnabled(), '已启动更新任务')
+    await runDeployPhase()
+    setMessage('更新并同步完成')
   } catch (e) {
     setError(e instanceof Error ? e.message : String(e))
+  } finally {
+    setState('updating', false)
+  }
+}
+
+export async function syncResource(resourceId: ResourceId) {
+  clearFeedback()
+  setState('updating', true)
+  try {
+    await runDownloadPhase(() => startDownload(resourceId), `已启动资源 ${resourceId} 更新`)
+    await runDeployPhase()
+    setMessage('更新并同步完成')
+  } catch (e) {
+    setError(e instanceof Error ? e.message : String(e))
+  } finally {
+    setState('updating', false)
   }
 }
 

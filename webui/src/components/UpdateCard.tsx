@@ -4,6 +4,8 @@ interface Props {
   item: UpdateCheckResult
   busy: boolean
   onUpdate: () => void
+  actionLabel?: string
+  busyLabel?: string
 }
 
 export default function UpdateCard(props: Props) {
@@ -33,7 +35,7 @@ export default function UpdateCard(props: Props) {
       {props.item.error ? <div class="error-text">{props.item.error}</div> : null}
       {props.item.hasUpdate && !props.item.error ? (
         <md-filled-button class="action-btn card-action" disabled={props.busy} onClick={props.onUpdate}>
-          {props.busy ? '更新中...' : '更新'}
+          {props.busy ? (props.busyLabel ?? '更新中...') : (props.actionLabel ?? '更新')}
         </md-filled-button>
       ) : null}
     </md-outlined-card>

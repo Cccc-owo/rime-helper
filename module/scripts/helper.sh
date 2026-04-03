@@ -556,7 +556,7 @@ EOF
 
     strategy_parse "$strategy"
     local extract_dir="$RESOURCE_DIR/$rid"
-    local current detail release_json tag ref sha dl_file urls first_url url filename
+    local current current_stamp current_fingerprint release_stamp remote_fingerprint detail release_json tag ref sha dl_file urls first_url url filename
 
     download_task_mark_progress "$rid" "checking" ""
 
@@ -591,6 +591,7 @@ EOF
         }
 
         do_version_set "$rid" "$sha"
+        do_version_stamp_set "$rid" ""
         download_task_mark_progress "$rid" "done" "$sha"
         download_task_mark_completed "$rid"
         return 0
@@ -612,10 +613,43 @@ EOF
         return 1
     }
     current=$(do_version_get "$rid")
-    if [ "$current" = "$tag" ] && [ -n "$tag" ]; then
-        download_task_mark_progress "$rid" "done" "Already up to date ($tag)"
-        download_task_mark_completed "$rid"
-        return 0
+    current_stamp=$(do_version_stamp_get "$rid")
+    current_fingerprint=$(do_version_fingerprint_get "$rid")
+    release_stamp=$(printf '%s' "$release_json" | github_json_extract_first updated_at 2>/dev/null || echo "")
+    if [ "$current" = "$tag" ] && [ -n "$tag" ] && [ -n "$release_stamp" ] && [ "$current_stamp" = "$release_stamp" ]; then
+        if [ "$STRATEGY_TYPE" = "asset" ] || [ "$STRATEGY_TYPE" = "asset-files" ]; then
+            remote_fingerprint=$(resource_release_fingerprint "$release_json" "$STRATEGY_TYPE" "$STRATEGY_PATTERN" 2>/dev/null || echo "")
+            if [ -n "$remote_fingerprint" ] && [ -n "$current_fingerprint" ] && [ "$remote_fingerprint" != "$current_fingerprint" ]; then
+                log_info "Fingerprint changed for $rid, force refresh"
+            elif [ -n "$remote_fingerprint" ] && [ -z "$current_fingerprint" ]; then
+                # Backward compatibility: hydrate fingerprint for existing installs.
+                do_version_fingerprint_set "$rid" "$remote_fingerprint"
+                download_task_mark_progress "$rid" "done" "Already up to date ($tag)"
+                download_task_mark_completed "$rid"
+                return 0
+            elif [ -z "$remote_fingerprint" ]; then
+                # If upstream headers are unavailable, avoid repeated forced redownloads.
+                # Store a sentinel bound to release stamp for stable "up-to-date" behavior.
+                remote_fingerprint="NOFP:${release_stamp}"
+                if [ "$current_fingerprint" = "$remote_fingerprint" ]; then
+                    download_task_mark_progress "$rid" "done" "Already up to date ($tag)"
+                    download_task_mark_completed "$rid"
+                    return 0
+                fi
+                do_version_fingerprint_set "$rid" "$remote_fingerprint"
+                download_task_mark_progress "$rid" "done" "Already up to date ($tag)"
+                download_task_mark_completed "$rid"
+                return 0
+            else
+                download_task_mark_progress "$rid" "done" "Already up to date ($tag)"
+                download_task_mark_completed "$rid"
+                return 0
+            fi
+        else
+            download_task_mark_progress "$rid" "done" "Already up to date ($tag)"
+            download_task_mark_completed "$rid"
+            return 0
+        fi
     fi
 
     download_task_mark_progress "$rid" "downloading" "$tag"
@@ -693,7 +727,12 @@ EOF
         }
     fi
 
+    if [ -z "$remote_fingerprint" ]; then
+        remote_fingerprint=$(resource_release_fingerprint "$release_json" "$STRATEGY_TYPE" "$STRATEGY_PATTERN" 2>/dev/null || echo "")
+    fi
     do_version_set "$rid" "$tag"
+    do_version_stamp_set "$rid" "$release_stamp"
+    do_version_fingerprint_set "$rid" "$remote_fingerprint"
     download_task_mark_progress "$rid" "done" "$tag"
     download_task_mark_completed "$rid"
     return 0
@@ -816,6 +855,73 @@ do_version_get() {
 do_version_set() {
     mkdir -p "$VERSION_DIR"
     printf '%s' "$2" > "$VERSION_DIR/${1}.version"
+}
+
+do_version_stamp_get() {
+    cat "$VERSION_DIR/${1}.stamp" 2>/dev/null || echo ""
+}
+
+do_version_stamp_set() {
+    mkdir -p "$VERSION_DIR"
+    printf '%s' "$2" > "$VERSION_DIR/${1}.stamp"
+}
+
+do_version_fingerprint_get() {
+    cat "$VERSION_DIR/${1}.fingerprint" 2>/dev/null || echo ""
+}
+
+do_version_fingerprint_set() {
+    mkdir -p "$VERSION_DIR"
+    printf '%s' "$2" > "$VERSION_DIR/${1}.fingerprint"
+}
+
+http_head_signature() {
+    local url="$1" headers etag clen lmod
+
+    if has_cmd curl; then
+        # Follow redirects so the signature reflects the final asset URL.
+        headers=$(curl -fsSLI --connect-timeout 15 --max-time 30 "$url") || return 1
+    elif has_cmd wget; then
+        headers=$(wget -S --spider -T 15 "$url" 2>&1) || return 1
+    else
+        return 1
+    fi
+
+    # Use the last matching header to represent the final response after redirects.
+    etag=$(printf '%s\n' "$headers" | awk -F':' 'tolower($1)=="etag"{sub(/^[ \t]+/,"",$2);sub(/\r$/,"",$2);v=$2} END{if (v!="") print v}')
+    clen=$(printf '%s\n' "$headers" | awk -F':' 'tolower($1)=="content-length"{sub(/^[ \t]+/,"",$2);sub(/\r$/,"",$2);v=$2} END{if (v!="") print v}')
+    lmod=$(printf '%s\n' "$headers" | awk -F':' 'tolower($1)=="last-modified"{sub(/^[ \t]+/,"",$2);sub(/\r$/,"",$2);v=$2} END{if (v!="") print v}')
+
+    printf '%s|%s|%s|%s' "$url" "$etag" "$clen" "$lmod"
+}
+
+resource_release_fingerprint() {
+    local release_json="$1" strategy_type="$2" strategy_pattern="$3"
+    local urls first_url sig
+
+    if [ "$strategy_type" = "asset" ] && [ -n "$strategy_pattern" ]; then
+        urls=$(printf '%s' "$release_json" | github_json_extract_all browser_download_url) || return 1
+        urls=$(printf '%s\n' "$urls" | resource_match_urls "$strategy_pattern")
+        first_url=$(printf '%s\n' "$urls" | head -1)
+        [ -n "$first_url" ] || return 1
+        http_head_signature "$first_url"
+        return $?
+    fi
+
+    if [ "$strategy_type" = "asset-files" ] && [ -n "$strategy_pattern" ]; then
+        urls=$(printf '%s' "$release_json" | github_json_extract_all browser_download_url) || return 1
+        urls=$(printf '%s\n' "$urls" | resource_match_urls "$strategy_pattern")
+        [ -n "$urls" ] || return 1
+        sig=$(printf '%s\n' "$urls" | while IFS= read -r u; do
+            [ -n "$u" ] || continue
+            http_head_signature "$u" || exit 1
+            printf '\n'
+        done) || return 1
+        printf '%s' "$sig" | sort | cksum | awk '{print $1 ":" $2}'
+        return $?
+    fi
+
+    return 1
 }
 
 # ── detect ───────────────────────────────────────────────────
@@ -1003,11 +1109,12 @@ do_deploy_all() {
     fi
 
     # Resolve target apps and deploy
-    local target_apps deployed_count
+    local target_apps deployed_count selected_targets
     target_apps=$(do_config_get "target_apps" "")
+    selected_targets=$(printf '%s' "$target_apps" | tr -d '[:space:]')
     deployed_count=0
     while IFS='|' read -r pkg label path uid dir_exists; do
-        if [ -z "$target_apps" ] || echo "$target_apps" | grep -q "$pkg"; then
+        if [ -z "$selected_targets" ]; then
             log_info "Deploy target selected: $pkg"
             if ! do_deploy "$STAGING_DIR" "$path" "$pkg"; then
                 rm -rf "$STAGING_DIR"
@@ -1015,6 +1122,18 @@ do_deploy_all() {
                 return 1
             fi
             deployed_count=$((deployed_count + 1))
+        elif [ -n "$pkg" ]; then
+            case ",$selected_targets," in
+                *,"$pkg",*)
+                    log_info "Deploy target selected: $pkg"
+                    if ! do_deploy "$STAGING_DIR" "$path" "$pkg"; then
+                        rm -rf "$STAGING_DIR"
+                        deploy_task_finish_error "同步到 $pkg 失败"
+                        return 1
+                    fi
+                    deployed_count=$((deployed_count + 1))
+                    ;;
+            esac
         fi
     done <<EOF
 $(do_detect)

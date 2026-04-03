@@ -2,7 +2,7 @@ import AppCard from '@/components/AppCard'
 import SurfaceSection from '@/components/SurfaceSection'
 import StatusBanner from '@/components/StatusBanner'
 import UpdateCard from '@/components/UpdateCard'
-import { checkUpdates, deployToApps, isBackendTaskRunning, refreshLogs, state, toggleLogs, updateResources } from '@/store/appStore'
+import { checkUpdates, isBackendTaskRunning, refreshLogs, state, syncEnabledResources, syncResource, toggleLogs } from '@/store/appStore'
 
 function formatTs(ts: string): string {
   if (!ts || ts === '0') return '从未'
@@ -47,8 +47,8 @@ export default function DeployPage() {
           <md-outlined-button class="action-btn" disabled={state.checkingUpdates || busy()} onClick={() => void checkUpdates()}>
             {state.checkingUpdates ? '检查中...' : '检查更新'}
           </md-outlined-button>
-          <md-filled-button class="action-btn" disabled={state.updating || busy()} onClick={() => void updateResources()}>
-            {state.updating ? '更新中...' : '全部更新'}
+          <md-filled-button class="action-btn" disabled={state.updating || busy()} onClick={() => void syncEnabledResources()}>
+            {state.updating ? '执行中...' : '更新并同步'}
           </md-filled-button>
         </div>
 
@@ -57,7 +57,13 @@ export default function DeployPage() {
         {state.updates.length === 0 && !state.checkingUpdates ? <md-outlined-card class="card empty">暂无更新结果</md-outlined-card> : null}
         <div class="deploy-list">
           {state.updates.map((item) => (
-            <UpdateCard item={item} busy={busy()} onUpdate={() => void updateResources(item.id)} />
+            <UpdateCard
+              item={item}
+              busy={busy()}
+              actionLabel="更新并同步"
+              busyLabel="处理中..."
+              onUpdate={() => void syncResource(item.id)}
+            />
           ))}
         </div>
       </SurfaceSection>
@@ -70,10 +76,6 @@ export default function DeployPage() {
             {state.snapshot?.deploy.error ? <div class="error-text">{state.snapshot.deploy.error}</div> : null}
           </md-outlined-card>
         ) : null}
-
-        <md-filled-button class="action-btn" disabled={state.checkingUpdates || busy()} onClick={() => void deployToApps()}>
-          {state.snapshot?.deploy.state === 'running' ? '同步中...' : '同步到数据目录'}
-        </md-filled-button>
       </SurfaceSection>
 
       <SurfaceSection title="日志">

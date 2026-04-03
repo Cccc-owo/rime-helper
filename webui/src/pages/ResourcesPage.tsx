@@ -3,7 +3,7 @@ import AddResourceForm from '@/components/AddResourceForm'
 import ResourceCard from '@/components/ResourceCard'
 import SurfaceSection from '@/components/SurfaceSection'
 import StatusBanner from '@/components/StatusBanner'
-import { checkUpdates, createOrUpdateResource, deleteResource, isBackendTaskRunning, restoreDefaultResources, state, toggleResourceEnabled, updateResources } from '@/store/appStore'
+import { createOrUpdateResource, deleteResource, isBackendTaskRunning, restoreDefaultResources, state, toggleResourceEnabled, updateResources } from '@/store/appStore'
 import type { Resource } from '@/lib/types'
 
 const CATEGORY_LABELS: Record<string, string> = {
@@ -61,9 +61,6 @@ export default function ResourcesPage() {
     <div class="page">
       <h1>资源</h1>
 
-      <SurfaceSection tone="filled" class="muted">
-        本页仅管理资源，不执行文件同步。
-      </SurfaceSection>
       <StatusBanner message={state.message} error={state.error} />
 
       <SurfaceSection title="操作">
@@ -88,18 +85,7 @@ export default function ResourcesPage() {
         </div>
 
         <div class="action-row">
-          <md-outlined-button class="action-btn" disabled={state.checkingUpdates || busy()} onClick={() => void checkUpdates()}>
-            {state.checkingUpdates ? '检查中...' : '检查更新'}
-          </md-outlined-button>
-          <md-filled-button class="action-btn" disabled={state.updating || busy()} onClick={() => void updateResources()}>
-            {state.updating ? '下载中...' : '下载全部启用资源'}
-          </md-filled-button>
-        </div>
-
-        <div class="action-row">
-          {!showForm() && !editing() ? (
-            <md-filled-tonal-button class="action-btn" disabled={busy()} onClick={() => { setEditing(null); setShowForm(true) }}>+ 添加资源</md-filled-tonal-button>
-          ) : null}
+          <md-filled-tonal-button class="action-btn" disabled={busy()} onClick={() => { setEditing(null); setShowForm(true) }}>+ 添加资源</md-filled-tonal-button>
           <md-outlined-button
             class="action-btn danger-outlined"
             disabled={busy()}

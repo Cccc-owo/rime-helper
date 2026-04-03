@@ -101,7 +101,7 @@ export default function ResourcesPage() {
             <md-filled-tonal-button class="action-btn" onClick={() => { setEditing(null); setShowForm(true) }}>+ 添加资源</md-filled-tonal-button>
           ) : null}
           <md-outlined-button
-            class="action-btn"
+            class="action-btn danger-outlined"
             onClick={() => {
               if (!confirm('确定恢复默认资源列表吗？这会覆盖当前 resources.conf')) return
               void restoreDefaultResources()

@@ -41,12 +41,12 @@ export default function DeployPage() {
 
       <SurfaceSection title="更新">
         <div class="action-row">
-          <md-filled-button class="action-btn" disabled={state.checkingUpdates} onClick={() => void checkUpdates()}>
+          <md-outlined-button class="action-btn" disabled={state.checkingUpdates} onClick={() => void checkUpdates()}>
             {state.checkingUpdates ? '检查中...' : '检查更新'}
-          </md-filled-button>
-          <md-outlined-button class="action-btn" disabled={state.updating} onClick={() => void updateResources()}>
-            {state.updating ? '更新中...' : '全部更新'}
           </md-outlined-button>
+          <md-filled-button class="action-btn" disabled={state.updating} onClick={() => void updateResources()}>
+            {state.updating ? '更新中...' : '全部更新'}
+          </md-filled-button>
         </div>
 
         <StatusBanner message={state.message} error={state.error} />

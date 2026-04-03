@@ -47,7 +47,7 @@ export default function SettingsPage() {
 
       <SurfaceSection title="维护">
         <div class="label">清理下载缓存，不影响已同步数据</div>
-        <md-outlined-button class="action-btn" onClick={() => void clearCache()}>清除下载缓存</md-outlined-button>
+        <md-outlined-button class="action-btn danger-outlined" onClick={() => void clearCache()}>清除下载缓存</md-outlined-button>
       </SurfaceSection>
     </div>
   )

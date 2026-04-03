@@ -47,6 +47,18 @@ function hasActiveTask(): boolean {
   return snapshot.download.state === 'running' || snapshot.deploy.state === 'running'
 }
 
+export function isDownloadTaskRunning(): boolean {
+  return state.snapshot?.download.state === 'running'
+}
+
+export function isDeployTaskRunning(): boolean {
+  return state.snapshot?.deploy.state === 'running'
+}
+
+export function isBackendTaskRunning(): boolean {
+  return isDownloadTaskRunning() || isDeployTaskRunning()
+}
+
 export async function refreshSnapshot(forceLoading = false) {
   if (forceLoading) setState('loading', true)
   try {

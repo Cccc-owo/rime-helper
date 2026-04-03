@@ -3,7 +3,7 @@ import AddResourceForm from '@/components/AddResourceForm'
 import ResourceCard from '@/components/ResourceCard'
 import SurfaceSection from '@/components/SurfaceSection'
 import StatusBanner from '@/components/StatusBanner'
-import { checkUpdates, createOrUpdateResource, deleteResource, restoreDefaultResources, state, toggleResourceEnabled, updateResources } from '@/store/appStore'
+import { checkUpdates, createOrUpdateResource, deleteResource, isBackendTaskRunning, restoreDefaultResources, state, toggleResourceEnabled, updateResources } from '@/store/appStore'
 import type { Resource } from '@/lib/types'
 
 const CATEGORY_LABELS: Record<string, string> = {
@@ -19,6 +19,7 @@ export default function ResourcesPage() {
   const [sortBy, setSortBy] = createSignal<'order' | 'name'>('order')
 
   const resources = () => state.snapshot?.resources ?? []
+  const busy = () => isBackendTaskRunning()
 
   const grouped = () => {
     const source = resources()
@@ -59,14 +60,13 @@ export default function ResourcesPage() {
   return (
     <div class="page">
       <h1>资源</h1>
-      <p class="desc">管理资源启用状态并触发下载。</p>
 
       <SurfaceSection tone="filled" class="muted">
         本页仅管理资源，不执行文件同步。
       </SurfaceSection>
       <StatusBanner message={state.message} error={state.error} />
 
-      <SurfaceSection title="筛选与操作">
+      <SurfaceSection title="操作">
         <div class="field-row">
           <div class="field">
             <label>分类筛选</label>
@@ -88,20 +88,21 @@ export default function ResourcesPage() {
         </div>
 
         <div class="action-row">
-          <md-outlined-button class="action-btn" disabled={state.updating} onClick={() => void checkUpdates()}>
+          <md-outlined-button class="action-btn" disabled={state.checkingUpdates || busy()} onClick={() => void checkUpdates()}>
             {state.checkingUpdates ? '检查中...' : '检查更新'}
           </md-outlined-button>
-          <md-filled-button class="action-btn" disabled={state.updating} onClick={() => void updateResources()}>
+          <md-filled-button class="action-btn" disabled={state.updating || busy()} onClick={() => void updateResources()}>
             {state.updating ? '下载中...' : '下载全部启用资源'}
           </md-filled-button>
         </div>
 
         <div class="action-row">
           {!showForm() && !editing() ? (
-            <md-filled-tonal-button class="action-btn" onClick={() => { setEditing(null); setShowForm(true) }}>+ 添加资源</md-filled-tonal-button>
+            <md-filled-tonal-button class="action-btn" disabled={busy()} onClick={() => { setEditing(null); setShowForm(true) }}>+ 添加资源</md-filled-tonal-button>
           ) : null}
           <md-outlined-button
             class="action-btn danger-outlined"
+            disabled={busy()}
             onClick={() => {
               if (!confirm('确定恢复默认资源列表吗？这会覆盖当前 resources.conf')) return
               void restoreDefaultResources()
@@ -114,6 +115,7 @@ export default function ResourcesPage() {
 
       {showForm() || editing() ? (
         <AddResourceForm
+          disabled={busy()}
           existingIds={resources().map(item => item.id)}
           initial={editing()}
           onCancel={() => { setShowForm(false); setEditing(null) }}
@@ -126,30 +128,22 @@ export default function ResourcesPage() {
       ) : null}
 
       {grouped().map((group) => (
-        <section>
+        <section class="resource-group">
           <h2>{group.label}</h2>
           {group.items.map((resource) => (
-            <>
-              <ResourceCard
-                resource={resource}
-                progress={progressText(resource.id)}
-                downloading={state.snapshot?.download.state === 'running' && (state.snapshot.download.mode === 'bulk' || state.snapshot.download.currentId === resource.id)}
-                onToggle={(enabled) => void toggleResourceEnabled(resource, enabled)}
-                onDownload={() => void updateResources(resource.id)}
-              />
-              <div class="action-row">
-                <md-text-button class="action-btn" onClick={() => { setShowForm(false); setEditing(resource) }}>编辑</md-text-button>
-                <md-text-button
-                  class="action-btn danger-action"
-                  onClick={() => {
-                    if (!confirm(`确定删除资源 ${resource.name} 吗？`)) return
-                    void deleteResource(resource)
-                  }}
-                >
-                  删除
-                </md-text-button>
-              </div>
-            </>
+            <ResourceCard
+              resource={resource}
+              progress={progressText(resource.id)}
+              busy={busy()}
+              downloading={state.snapshot?.download.state === 'running' && (state.snapshot.download.mode === 'bulk' || state.snapshot.download.currentId === resource.id)}
+              onToggle={(enabled) => void toggleResourceEnabled(resource, enabled)}
+              onDownload={() => void updateResources(resource.id)}
+              onEdit={() => { setShowForm(false); setEditing(resource) }}
+              onDelete={() => {
+                if (!confirm(`确定删除资源 ${resource.name} 吗？`)) return
+                void deleteResource(resource)
+              }}
+            />
           ))}
         </section>
       ))}

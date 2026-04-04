@@ -1,6 +1,6 @@
 id=rime_helper
 name=Rime Update Helper
-version=v1.0.0
+version=v1.1.0
 versionCode=1
 author=Cccc_
 description=Update and sync Rime resources on Android.
